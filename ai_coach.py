@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V56 - SUPER SYNC)
+# 1. CẤU HÌNH & KẾT NỐI (V57 - INSTANT SYNC)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -50,8 +50,9 @@ def update_data(table_name, update_dict, match_col, match_val):
     except: return False
 
 def delete_data(table_name, match_col, match_val):
-    """Hàm xoá dữ liệu tận gốc"""
+    """Hàm xoá dữ liệu chuẩn xác"""
     try: 
+        # Thực hiện xoá
         supabase.table(table_name).delete().eq(match_col, match_val).execute()
         return True
     except Exception as e: 
@@ -324,22 +325,20 @@ else:
         else: st.info("Database trống.")
 
     # =========================================================================
-    # 🔧 QUẢN LÝ USER (SUPER SYNC V56)
+    # 🔧 QUẢN LÝ USER (SYNC REAL-TIME V57)
     # =========================================================================
     elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>QUẢN LÝ USER</div>", unsafe_allow_html=True)
         raw = run_query("users")
         
         if not raw.empty:
-            # Chuẩn bị dữ liệu hiển thị (Thêm cột Note nếu có)
             df = raw[raw['username'] != 'admin'].copy()
-            if 'note' not in df.columns: df['note'] = "" # Fallback nếu chưa có note
+            if 'note' not in df.columns: df['note'] = "" 
             
-            # --- CỘT 1: BẢNG TƯƠNG TÁC ---
             c_table, c_edit = st.columns([1.5, 1])
             with c_table:
                 st.subheader("Danh sách User")
-                # Hiển thị bảng chọn được dòng
+                # Bảng tương tác (Interactive Table)
                 event = st.dataframe(
                     df[['username', 'full_name', 'is_active', 'note']], 
                     use_container_width=True, 
@@ -348,27 +347,22 @@ else:
                     on_select="rerun"
                 )
 
-            # --- CỘT 2: FORM CHỈNH SỬA ---
             with c_edit:
                 st.subheader("🛠️ Chỉnh sửa / Xóa")
-                
-                # Kiểm tra xem có dòng nào được chọn không
                 if event.selection.rows:
                     idx = event.selection.rows[0]
                     user_data = df.iloc[idx]
                     selected_u = user_data['username']
                     
                     st.info(f"Đang chọn: **{selected_u}**")
-                    
                     with st.form("edit_form"):
                         new_name = st.text_input("Họ tên & Gói:", value=user_data['full_name'])
-                        new_note = st.text_area("Ghi chú (Note):", value=str(user_data['note']) if user_data['note'] else "")
+                        # HIỆN NOTE TỪ DB
+                        new_note = st.text_area("Ghi chú (Note):", value=str(user_data['note']) if pd.notna(user_data['note']) else "")
                         
                         curr_exp = user_data['expiry_date']
-                        if pd.notna(curr_exp):
-                            new_exp = st.date_input("Hạn dùng:", value=pd.to_datetime(curr_exp))
-                        else:
-                            new_exp = st.date_input("Hạn dùng:", value=datetime.now())
+                        if pd.notna(curr_exp): new_exp = st.date_input("Hạn dùng:", value=pd.to_datetime(curr_exp))
+                        else: new_exp = st.date_input("Hạn dùng:", value=datetime.now())
                             
                         new_active = st.checkbox("Active (Đã TT)", value=bool(user_data['is_active']))
                         
@@ -381,12 +375,16 @@ else:
                             }, "username", selected_u)
                             st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
                             
+                        # NÚT XÓA MẠNH MẼ (FORCE SYNC)
                         if c_del.form_submit_button("🗑️ XÓA NGAY", type="primary"):
-                            delete_data("users", "username", selected_u)
-                            st.warning(f"Đã xóa {selected_u}!"); time.sleep(0.5); st.rerun()
+                            if delete_data("users", "username", selected_u):
+                                st.success(f"Đã xóa {selected_u} thành công!")
+                                time.sleep(1) # Chờ 1s để DB kịp xóa
+                                st.rerun()    # Tải lại trang ngay lập tức
+                            else:
+                                st.error("Lỗi: Không thể xóa user này!")
                 else:
                     st.info("👈 Hãy chọn một dòng bên trái để sửa.")
-
         else: st.info("Chưa có user nào.")
 
     # --- CÁC PHẦN KHÁC GIỮ NGUYÊN ---
@@ -408,9 +406,7 @@ else:
             client = clients[clients['name'] == c_name].iloc[0]; cid = int(client['id'])
             st.markdown(f"### {client['name']} - {client['level']}")
             t1, t2, t3, t4 = st.tabs(["MEAL PLAN", "CHECK-IN", "TIẾN ĐỘ", "CÀI ĐẶT"])
-            with t1: 
-                # (Logic Meal Plan rút gọn)
-                st.info("Chế độ ăn hiển thị tại đây")
+            with t1: st.info("Chế độ ăn hiển thị tại đây")
             with t2:
                 with st.form("chk"):
                     d = st.date_input("Ngày"); w = st.number_input("Cân nặng")
