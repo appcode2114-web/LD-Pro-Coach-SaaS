@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V39 - FULL SAAS)
+# 1. CẤU HÌNH & KẾT NỐI (V40 - STABLE FIX)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -67,7 +67,7 @@ def register_user(u, p, n, e, package_info):
     if not check.empty: return False, "Tên đăng nhập đã tồn tại"
     
     hashed = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    # Lưu tên kèm gói cước để Admin dễ nhận biết (Ví dụ: Nguyen Van A (3 Tháng))
+    # Lưu tên kèm gói cước để Admin dễ nhận biết
     full_name_info = f"{n} ({package_info})"
     
     # Mặc định is_active = False (Chờ thanh toán)
@@ -78,7 +78,7 @@ def register_user(u, p, n, e, package_info):
     })
     return ok, ""
 
-# --- FORMULAS (GIỮ NGUYÊN TỪ BẢN CŨ) ---
+# --- FORMULAS ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
 
 def calc_basic(w, h, a, g, act, goal):
@@ -158,7 +158,7 @@ if not st.session_state.logged_in:
                         st.success("Đăng nhập thành công!"); time.sleep(0.5); st.rerun()
                     else: st.error("Sai thông tin đăng nhập!")
         
-        # TAB 2: ĐĂNG KÝ & THANH TOÁN QR
+        # TAB 2: ĐĂNG KÝ & THANH TOÁN QR (ĐÃ SỬA LỖI MẤT DỮ LIỆU)
         with tab2:
             if 'reg_step' not in st.session_state: st.session_state.reg_step = 1
             
@@ -172,6 +172,11 @@ if not st.session_state.logged_in:
                 
                 if st.button("TIẾP THEO ➡️", use_container_width=True):
                     if nu and np and nn and ne: 
+                        # === LƯU DỮ LIỆU VÀO KHO AN TOÀN ===
+                        st.session_state.saved_u = nu
+                        st.session_state.saved_p = np
+                        st.session_state.saved_n = nn
+                        st.session_state.saved_e = ne
                         st.session_state.reg_step = 2; st.rerun()
                     else: st.warning("Vui lòng nhập đủ thông tin!")
 
@@ -192,13 +197,20 @@ if not st.session_state.logged_in:
                     if st.button("⬅️ QUAY LẠI"): st.session_state.reg_step = 1; st.rerun()
                 with c_next:
                     if st.button("ĐĂNG KÝ & THANH TOÁN ➡️", type="primary"):
-                        ok, msg = register_user(st.session_state.r_u, st.session_state.r_p, st.session_state.r_n, st.session_state.r_e, pkg_choice)
+                        # DÙNG DỮ LIỆU TỪ KHO AN TOÀN (saved_)
+                        ok, msg = register_user(
+                            st.session_state.saved_u, 
+                            st.session_state.saved_p, 
+                            st.session_state.saved_n, 
+                            st.session_state.saved_e, 
+                            pkg_choice
+                        )
                         if ok:
                             st.session_state.final_money = packages[pkg_choice]
                             st.session_state.reg_step = 3
-                            # Gửi thông báo Telegram cho Admin
+                            # Gửi Telegram
                             try:
-                                msg_tele = f"💰 KHÁCH MỚI!\nUser: {st.session_state.r_u}\nTên: {st.session_state.r_n}\nGói: {pkg_choice}\nTiền: {packages[pkg_choice]:,}đ"
+                                msg_tele = f"💰 KHÁCH MỚI!\nUser: {st.session_state.saved_u}\nTên: {st.session_state.saved_n}\nGói: {pkg_choice}\nTiền: {packages[pkg_choice]:,}đ"
                                 send_telegram(msg_tele)
                             except: pass
                             st.rerun()
@@ -210,11 +222,11 @@ if not st.session_state.logged_in:
                     bank_id = st.secrets["bank"]["id"]
                     acc_no = st.secrets["bank"]["account_no"]
                     acc_name = st.secrets["bank"]["account_name"]
-                except: # Fallback nếu chưa cấu hình
+                except: 
                     bank_id = "MB"; acc_no = "0000000000"; acc_name = "DEMO"
                 
                 amount = st.session_state.final_money
-                content = f"KICH HOAT {st.session_state.r_u}"
+                content = f"KICH HOAT {st.session_state.saved_u}"
                 
                 # TẠO LINK QR VIETQR
                 qr_url = f"https://img.vietqr.io/image/{bank_id}-{acc_no}-compact.jpg?amount={amount}&addInfo={content}&accountName={acc_name}"
