@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 import bcrypt
 import time
 import requests
@@ -8,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V43 - ADMIN PRO)
+# 1. CẤU HÌNH & KẾT NỐI (V44 - DASHBOARD PRO)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -18,14 +19,13 @@ try:
     SUPABASE_KEY = st.secrets["supabase"]["KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    st.error("❌ Lỗi cấu hình Secrets: Vui lòng kiểm tra lại URL và KEY trong Streamlit Cloud."); st.stop()
+    st.error("❌ Lỗi cấu hình Secrets."); st.stop()
 
 # ==========================================
 # 2. HÀM XỬ LÝ (CORE LOGIC)
 # ==========================================
 
 def send_telegram(message):
-    """Gửi thông báo về điện thoại Admin khi có khách đăng ký"""
     try:
         token = st.secrets["telegram"]["bot_token"]
         chat_id = st.secrets["telegram"]["chat_id"]
@@ -53,33 +53,30 @@ def login_user(username, password):
     df = run_query("users", filter_col="username", filter_val=username)
     if not df.empty:
         user = df.iloc[0]
-        # LOGIC: CHẶN NẾU CHƯA ĐƯỢC ADMIN KÍCH HOẠT
-        is_active = bool(user.get('is_active', False))
-        
-        if not is_active: 
+        # LOGIC: ADMIN LUÔN VÀO ĐƯỢC, USER PHẢI ACTIVE
+        if user['username'] != 'admin' and not bool(user.get('is_active', False)):
             return "LOCKED" 
-            
         try:
-            if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')): 
-                return user.to_dict()
+            if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')): return user.to_dict()
         except:
-            if password == user['password_hash']: 
-                return user.to_dict()
+            if password == user['password_hash']: return user.to_dict()
     return None
 
 def register_user(u, p, n, e, package_info):
     check = run_query("users", select="id", filter_col="username", filter_val=u)
     if not check.empty: return False, "Tên đăng nhập đã tồn tại"
-    
     hashed = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     full_name_info = f"{n} ({package_info})"
-    
-    ok, msg = insert_data("users", {
-        "username": u, "password_hash": hashed, 
-        "full_name": full_name_info, 
-        "email": e, "expiry_date": None, "is_active": False
-    })
+    ok, msg = insert_data("users", {"username": u, "password_hash": hashed, "full_name": full_name_info, "email": e, "expiry_date": None, "is_active": False})
     return ok, ""
+
+def estimate_revenue(full_name):
+    """Hàm tách tiền từ tên gói (Ước tính doanh thu)"""
+    if "1 Tháng" in full_name: return 200000, "1 Tháng"
+    if "3 Tháng" in full_name: return 500000, "3 Tháng"
+    if "6 Tháng" in full_name: return 900000, "6 Tháng"
+    if "1 Năm" in full_name: return 1500000, "1 Năm"
+    return 0, "Unknown"
 
 # --- FORMULAS ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
@@ -111,22 +108,21 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Montserrat:wght@400;600;800&display=swap');
     
     .stApp { background: radial-gradient(circle at 50% 10%, #1a0505 0%, #000000 90%); color: #E0E0E0; font-family: 'Montserrat', sans-serif; }
-    .main-logo { font-family: 'Teko', sans-serif; font-size: 70px; font-weight: 700; text-align: center; background: linear-gradient(180deg, #FFD700 10%, #B8860B 60%, #8B6914 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px; filter: drop-shadow(0px 2px 0px #000); }
+    .main-logo { font-family: 'Teko', sans-serif; font-size: 70px; font-weight: 700; text-align: center; background: linear-gradient(180deg, #FFD700 10%, #B8860B 60%, #8B6914 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px; }
     
     div[data-baseweb="input"], div[data-baseweb="select"] > div { background-color: #F5F5F5 !important; border: 1px solid #D1D1D1 !important; border-radius: 8px !important; color: #111 !important; }
     input[class*="st-"], div[data-baseweb="select"] span { color: #111 !important; font-weight: 600; }
     
     .css-card { background-color: rgba(20, 20, 20, 0.6); backdrop-filter: blur(10px); border: 1px solid #222; border-left: 3px solid #D4AF37; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-    .stButton > button { background: linear-gradient(90deg, #8B0000 0%, #C00000 100%); color: white; font-family: 'Teko', sans-serif; font-size: 22px; letter-spacing: 1px; border: none; border-radius: 6px; padding: 10px 0; width: 100%; transition: 0.3s; }
+    .stButton > button { background: linear-gradient(90deg, #8B0000 0%, #C00000 100%); color: white; font-family: 'Teko', sans-serif; font-size: 22px; width: 100%; transition: 0.3s; }
     .stButton > button:hover { background: linear-gradient(90deg, #C00000 0%, #FF0000 100%); box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4); }
     
     section[data-testid="stSidebar"] { background-color: #080808; border-right: 1px solid #222; }
     section[data-testid="stSidebar"] * { color: #EEE !important; }
 
-    div[data-testid="stTable"] th { background-color: #D4AF37 !important; color: #000000 !important; font-family: 'Teko', sans-serif !important; font-size: 20px !important; text-align: center !important; }
+    div[data-testid="stTable"] th { background-color: #D4AF37 !important; color: #000000 !important; font-family: 'Teko', sans-serif !important; }
     div[data-testid="stTable"] td { background-color: #222 !important; color: #FFFFFF !important; border-bottom: 1px solid #444 !important; }
     
-    /* STYLE CHO GÓI CƯỚC */
     div[role="radiogroup"] label { border: 1px solid #444; padding: 10px; border-radius: 5px; background: #222; margin-bottom: 5px; }
     div[role="radiogroup"] label[data-checked="true"] { border-color: #D4AF37; background: #333; }
 </style>
@@ -146,7 +142,6 @@ if not st.session_state.logged_in:
     with c2:
         tab1, tab2 = st.tabs(["ĐĂNG NHẬP", "ĐĂNG KÝ GÓI"])
         
-        # TAB 1: ĐĂNG NHẬP
         with tab1:
             with st.form("login"):
                 u = st.text_input("Username")
@@ -161,84 +156,47 @@ if not st.session_state.logged_in:
                         st.success("Đăng nhập thành công!"); time.sleep(0.5); st.rerun()
                     else: st.error("Sai thông tin đăng nhập!")
         
-        # TAB 2: ĐĂNG KÝ & THANH TOÁN QR
         with tab2:
             if 'reg_step' not in st.session_state: st.session_state.reg_step = 1
-            
-            # BƯỚC 1: NHẬP THÔNG TIN
             if st.session_state.reg_step == 1:
                 st.markdown("##### 1. THÔNG TIN CÁ NHÂN")
                 nu = st.text_input("Tên đăng nhập (Viết liền không dấu)", key="r_u")
                 np = st.text_input("Mật khẩu", type="password", key="r_p")
                 nn = st.text_input("Họ và tên", key="r_n")
                 ne = st.text_input("Gmail (Để khôi phục tài khoản)", key="r_e")
-                
                 if st.button("TIẾP THEO ➡️", use_container_width=True):
                     if nu and np and nn and ne: 
-                        st.session_state.saved_u = nu
-                        st.session_state.saved_p = np
-                        st.session_state.saved_n = nn
-                        st.session_state.saved_e = ne
-                        st.session_state.reg_step = 2; st.rerun()
+                        st.session_state.saved_u = nu; st.session_state.saved_p = np; st.session_state.saved_n = nn; st.session_state.saved_e = ne; st.session_state.reg_step = 2; st.rerun()
                     else: st.warning("Vui lòng nhập đủ thông tin!")
-
-            # BƯỚC 2: CHỌN GÓI & XÁC NHẬN
             elif st.session_state.reg_step == 2:
                 st.markdown("##### 2. CHỌN GÓI SỬ DỤNG")
-                packages = {
-                    "1 Tháng": 200000,
-                    "3 Tháng": 500000,
-                    "6 Tháng": 900000,
-                    "1 Năm (VIP)": 1500000
-                }
+                packages = {"1 Tháng": 200000, "3 Tháng": 500000, "6 Tháng": 900000, "1 Năm (VIP)": 1500000}
                 pkg_choice = st.radio("Chọn gói phù hợp:", list(packages.keys()))
                 st.metric("SỐ TIỀN CẦN THANH TOÁN:", f"{packages[pkg_choice]:,} VNĐ")
-                
                 c_back, c_next = st.columns(2)
                 with c_back: 
                     if st.button("⬅️ QUAY LẠI"): st.session_state.reg_step = 1; st.rerun()
                 with c_next:
                     if st.button("ĐĂNG KÝ & THANH TOÁN ➡️", type="primary"):
-                        ok, msg = register_user(
-                            st.session_state.saved_u, 
-                            st.session_state.saved_p, 
-                            st.session_state.saved_n, 
-                            st.session_state.saved_e, 
-                            pkg_choice
-                        )
+                        ok, msg = register_user(st.session_state.saved_u, st.session_state.saved_p, st.session_state.saved_n, st.session_state.saved_e, pkg_choice)
                         if ok:
-                            st.session_state.final_money = packages[pkg_choice]
-                            st.session_state.reg_step = 3
+                            st.session_state.final_money = packages[pkg_choice]; st.session_state.reg_step = 3
                             try:
                                 msg_tele = f"💰 KHÁCH MỚI!\nUser: {st.session_state.saved_u}\nTên: {st.session_state.saved_n}\nGói: {pkg_choice}\nTiền: {packages[pkg_choice]:,}đ"
                                 send_telegram(msg_tele)
                             except: pass
                             st.rerun()
                         else: st.error(msg)
-
-            # BƯỚC 3: QUÉT MÃ QR
             elif st.session_state.reg_step == 3:
-                try:
-                    bank_id = st.secrets["bank"]["id"]
-                    acc_no = st.secrets["bank"]["account_no"]
-                    acc_name = st.secrets["bank"]["account_name"]
-                except: 
-                    bank_id = "MB"; acc_no = "0000000000"; acc_name = "DEMO"
-                
-                amount = st.session_state.final_money
-                content = f"KICH HOAT {st.session_state.saved_u}"
-                
+                try: bank_id = st.secrets["bank"]["id"]; acc_no = st.secrets["bank"]["account_no"]; acc_name = st.secrets["bank"]["account_name"]
+                except: bank_id = "MB"; acc_no = "0000000000"; acc_name = "DEMO"
+                amount = st.session_state.final_money; content = f"KICH HOAT {st.session_state.saved_u}"
                 qr_url = f"https://img.vietqr.io/image/{bank_id}-{acc_no}-compact.jpg?amount={amount}&addInfo={content}&accountName={acc_name}"
-                
                 st.success("✅ ĐĂNG KÝ THÀNH CÔNG! VUI LÒNG THANH TOÁN ĐỂ KÍCH HOẠT.")
                 c_img, _ = st.columns([1,1])
-                with c_img:
-                    st.image(qr_url, caption="Mở App Ngân hàng quét mã này", width=300)
-                
+                with c_img: st.image(qr_url, caption="Mở App Ngân hàng quét mã này", width=300)
                 st.info("⚡ Hệ thống thanh toán tự động. Sau khi chuyển khoản, vui lòng đợi 1-5 phút để hệ thống xác nhận và kích hoạt tài khoản.")
-                
-                if st.button("VỀ TRANG CHỦ"): 
-                    st.session_state.reg_step = 1; st.rerun()
+                if st.button("VỀ TRANG CHỦ"): st.session_state.reg_step = 1; st.rerun()
 
 else:
     # --- PHẦN GIAO DIỆN CHÍNH (SAU KHI LOGIN) ---
@@ -250,80 +208,144 @@ else:
     for k,v in default_inputs.items():
         if k not in st.session_state: st.session_state[k] = v
 
-    # --- SIDEBAR (ĐÃ TÁCH BIỆT ADMIN) ---
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/8847/8847419.png", width=80)
         st.markdown(f"### 👤 {user['full_name']}")
-        
-        # LOGIC RIÊNG CHO ADMIN (KHÔNG HIỆN NGÀY)
         if IS_ADMIN:
-            st.info("🔰 QUẢN TRỊ VIÊN") # Thẻ Admin riêng biệt
+            st.info("🔰 QUẢN TRỊ VIÊN")
         else:
-            # LOGIC CHO USER THƯỜNG (HIỆN NGÀY)
             if user['expiry_date']:
                 days_left = (pd.to_datetime(user['expiry_date']) - datetime.now()).days
-                if days_left > 0:
-                    st.caption(f"⏳ Hạn dùng: {days_left} ngày")
-                else:
-                    st.error("⚠️ Đã hết hạn")
-            else:
-                st.warning("Chưa kích hoạt")
-
+                if days_left > 0: st.caption(f"⏳ Hạn dùng: {days_left} ngày")
+                else: st.error("⚠️ Đã hết hạn")
+            else: st.warning("Chưa kích hoạt")
         if IS_ADMIN:
             st.markdown("---")
-            # MENU RIÊNG CHO ADMIN
-            menu = st.radio("MENU QUẢN TRỊ", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH", "🔧 DUYỆT THANH TOÁN"])
+            menu = st.radio("QUẢN TRỊ", ["📊 DASHBOARD SAAS", "🔧 QUẢN LÝ USER", "💵 TÀI CHÍNH", "👥 HỌC VIÊN", "➕ THÊM MỚI"])
         else:
             st.markdown("---")
-            # MENU CHO USER THƯỜNG
             menu = st.radio("MENU", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH"])
-
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
-    # --- 1. ADMIN PANEL (DUYỆT THANH TOÁN) ---
-    if menu == "🔧 DUYỆT THANH TOÁN" and IS_ADMIN:
+    # =========================================================================
+    # 🌟 PHẦN ADMIN ĐÃ NÂNG CẤP (V44)
+    # =========================================================================
+    if menu == "📊 DASHBOARD SAAS" and IS_ADMIN:
+        st.markdown(f"<div class='main-logo'>DOANH CHỦ SAAS</div>", unsafe_allow_html=True)
+        
+        # 1. LẤY DỮ LIỆU & LỌC BỎ ADMIN
+        raw_users = run_query("users")
+        # Lọc bỏ dòng admin
+        if not raw_users.empty:
+            df_users = raw_users[raw_users['username'] != 'admin'].copy()
+        else:
+            df_users = pd.DataFrame()
+
+        if not df_users.empty:
+            # 2. TÍNH TOÁN DOANH THU & GÓI
+            df_users['Gói'] = df_users['full_name'].apply(lambda x: estimate_revenue(x)[1])
+            df_users['Doanh Thu'] = df_users['full_name'].apply(lambda x: estimate_revenue(x)[0])
+            
+            total_rev = df_users['Doanh Thu'].sum()
+            total_users = len(df_users)
+            active_users = len(df_users[df_users['is_active']==True])
+            pending_users = total_users - active_users
+
+            # 3. HIỂN THỊ METRIC
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("💰 TỔNG DOANH THU", f"{total_rev:,} đ")
+            c2.metric("👥 TỔNG KHÁCH", total_users)
+            c3.metric("✅ ĐANG HOẠT ĐỘNG", active_users)
+            c4.metric("⏳ CHỜ KÍCH HOẠT", pending_users)
+
+            st.divider()
+
+            # 4. BIỂU ĐỒ THỐNG KÊ
+            col_chart1, col_chart2 = st.columns(2)
+            with col_chart1:
+                st.subheader("📊 Tỷ lệ các gói đăng ký")
+                pkg_count = df_users['Gói'].value_counts().reset_index()
+                pkg_count.columns = ['Gói', 'Số lượng']
+                fig = px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col_chart2:
+                st.subheader("📈 Tình trạng tài khoản")
+                status_count = df_users['is_active'].map({True: 'Active', False: 'Pending'}).value_counts().reset_index()
+                status_count.columns = ['Trạng thái', 'Số lượng']
+                fig2 = px.bar(status_count, x='Trạng thái', y='Số lượng', color='Trạng thái', color_discrete_map={'Active':'#00FF00', 'Pending':'#FF0000'})
+                st.plotly_chart(fig2, use_container_width=True)
+
+        else: st.info("Chưa có dữ liệu khách hàng.")
+
+    elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DUYỆT THANH TOÁN</div>", unsafe_allow_html=True)
-        # Chỉ hiện user chưa active lên đầu
-        all_users = run_query("users", order_by=("is_active", "asc"))
-        st.dataframe(all_users[['id', 'username', 'full_name', 'email', 'is_active', 'expiry_date']], use_container_width=True)
         
-        st.info("💡 Mẹo: Nhìn cột 'full_name' để biết khách chọn gói nào (VD: Nguyen A (3 Tháng))")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            with st.form("admin_act"):
-                st.subheader("KÍCH HOẠT TÀI KHOẢN")
-                u_sel = st.selectbox("Chọn user:", all_users['username'].tolist())
-                
-                # Logic hint
-                sel_row = all_users[all_users['username']==u_sel].iloc[0]
-                st.caption(f"Thông tin gói: {sel_row['full_name']}")
-                
-                months_add = st.selectbox("Gia hạn thêm:", [1, 3, 6, 12], index=0)
-                is_active = st.checkbox("✅ ĐÃ THANH TOÁN (ACTIVE)", value=True)
-                
-                if st.form_submit_button("XÁC NHẬN DUYỆT"):
-                    curr = sel_row['expiry_date']
-                    if pd.isna(curr): start_d = datetime.now()
-                    else: start_d = pd.to_datetime(curr)
-                    
-                    new_exp = (start_d + timedelta(days=months_add*30)).strftime('%Y-%m-%d')
-                    update_data("users", {"expiry_date": new_exp, "is_active": is_active}, "username", u_sel)
-                    st.success(f"Đã duyệt {u_sel}! Hạn mới: {new_exp}"); time.sleep(1); st.rerun()
+        # Lấy dữ liệu và lọc bỏ Admin
+        raw_users = run_query("users", order_by=("is_active", "asc"))
+        if not raw_users.empty:
+            df_view = raw_users[raw_users['username'] != 'admin'].copy()
+            
+            # --- CÔNG CỤ TÌM KIẾM ---
+            search_term = st.text_input("🔍 Tìm kiếm khách hàng (Tên, User, Email):")
+            if search_term:
+                df_view = df_view[
+                    df_view['username'].str.contains(search_term, case=False) | 
+                    df_view['full_name'].str.contains(search_term, case=False) |
+                    df_view['email'].str.contains(search_term, case=False)
+                ]
 
-        with c2:
-             with st.form("admin_rs"):
-                st.subheader("CẤP LẠI MẬT KHẨU")
-                u_rs = st.selectbox("User:", all_users['username'].tolist(), key="sel_rs")
-                new_p = st.text_input("Mật khẩu mới")
-                if st.form_submit_button("ĐỔI PASS"):
-                    if new_p:
-                        h = bcrypt.hashpw(new_p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                        update_data("users", {"password_hash": h}, "username", u_rs)
-                        st.success("Xong!"); time.sleep(1); st.rerun()
+            # Hiển thị bảng đẹp hơn
+            st.dataframe(
+                df_view[['id', 'username', 'full_name', 'email', 'is_active', 'expiry_date']], 
+                use_container_width=True,
+                column_config={
+                    "is_active": st.column_config.CheckboxColumn("Trạng thái", help="Đã thanh toán chưa?"),
+                    "expiry_date": st.column_config.DateColumn("Hết hạn"),
+                    "full_name": "Họ tên & Gói"
+                }
+            )
 
-    # --- 2. TỔNG QUAN ---
-    elif menu == "🏠 TỔNG QUAN":
+            st.divider()
+            c1, c2 = st.columns(2)
+            
+            # FORM DUYỆT
+            with c1:
+                with st.form("admin_act"):
+                    st.subheader("📝 DUYỆT / GIA HẠN")
+                    # Chỉ hiện danh sách user (đã lọc admin) trong selectbox
+                    user_list = df_view['username'].tolist()
+                    if user_list:
+                        u_sel = st.selectbox("Chọn khách hàng:", user_list)
+                        months_add = st.selectbox("Gia hạn thêm:", [1, 3, 6, 12], index=0)
+                        is_active = st.checkbox("✅ ĐÃ THANH TOÁN (ACTIVE)", value=True)
+                        if st.form_submit_button("CẬP NHẬT"):
+                            row = df_view[df_view['username']==u_sel].iloc[0]
+                            curr = row['expiry_date']
+                            start_d = pd.to_datetime(curr) if pd.notna(curr) else datetime.now()
+                            new_exp = (start_d + timedelta(days=months_add*30)).strftime('%Y-%m-%d')
+                            update_data("users", {"expiry_date": new_exp, "is_active": is_active}, "username", u_sel)
+                            st.success(f"Đã kích hoạt {u_sel}!"); time.sleep(1); st.rerun()
+                    else: st.info("Không tìm thấy user nào.")
+
+            # FORM ĐỔI PASS
+            with c2:
+                with st.form("admin_rs"):
+                    st.subheader("🔑 CẤP LẠI MẬT KHẨU")
+                    if user_list:
+                        u_rs = st.selectbox("Chọn khách hàng:", user_list, key="u_rs")
+                        new_p = st.text_input("Mật khẩu mới")
+                        if st.form_submit_button("ĐỔI PASS"):
+                            if new_p:
+                                h = bcrypt.hashpw(new_p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                                update_data("users", {"password_hash": h}, "username", u_rs)
+                                st.success("Xong!"); time.sleep(1); st.rerun()
+                    else: st.info("Trống.")
+        else: st.info("Chưa có dữ liệu.")
+
+    # --- CÁC TAB CHỨC NĂNG (DÙNG CHUNG CHO CẢ ADMIN VÀ USER) ---
+    elif (menu == "🏠 TỔNG QUAN") or (menu == "💵 TÀI CHÍNH" and IS_ADMIN == False): 
+        # Logic TỔNG QUAN của USER
         st.markdown(f"<div class='main-logo'>DASHBOARD</div>", unsafe_allow_html=True)
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not clients.empty:
@@ -334,8 +356,8 @@ else:
             st.dataframe(clients[['name', 'package_name', 'end_date', 'status']], use_container_width=True)
         else: st.info("Chưa có dữ liệu.")
 
-    # --- 3. HỌC VIÊN ---
     elif menu == "👥 HỌC VIÊN":
+        # Logic HỌC VIÊN
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not clients.empty:
             c_sel, _ = st.columns([1,2])
@@ -343,8 +365,8 @@ else:
             client = clients[clients['name'] == c_name].iloc[0]
             cid = int(client['id'])
             st.markdown(f"""<div class="css-card" style="border-top: 4px solid #D4AF37"><h1 style="color:#FFF; margin:0">{client['name']}</h1><span style="color:#D4AF37">{client['level']}</span></div>""", unsafe_allow_html=True)
-            
             t1, t2, t3, t4 = st.tabs(["MEAL PLAN", "CHECK-IN", "TIẾN ĐỘ", "CÀI ĐẶT"])
+            # (Giữ nguyên logic tabs meal plan...)
             with t1:
                 plan = {}
                 try:
@@ -360,35 +382,19 @@ else:
                         cal_base, p, c, f = calc_basic(client['start_weight'], client['height'], client['age'], client['gender'], client['activity'], client['goal'])
                         plan = {'train': {'p': p, 'c': int(c*1.1), 'f': f, 'cal': int(cal_base*1.05)}, 'rest': {'p': p, 'c': int(c*0.9), 'f': f, 'cal': int(cal_base*0.95)}}
                 except: pass
-                
                 if plan:
                     c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown('<div class="css-card" style="border-left: 4px solid #00BFFF"><h3 style="text-align:center; color:#00BFFF">TRAINING DAY</h3>', unsafe_allow_html=True)
-                        st.plotly_chart(draw_donut(plan['train']['p'], plan['train']['c'], plan['train']['f'], plan['train']['cal']), use_container_width=True)
-                        st.table(make_meal_df(plan['train']['p'], plan['train']['c'], plan['train']['f'], 'train'))
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    with c2:
-                        st.markdown('<div class="css-card" style="border-left: 4px solid #777"><h3 style="text-align:center; color:#AAA; font-family:Teko">REST DAY</h3>', unsafe_allow_html=True)
-                        st.plotly_chart(draw_donut(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], plan['rest']['cal']), use_container_width=True)
-                        st.table(make_meal_df(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], 'rest'))
-                        st.markdown('</div>', unsafe_allow_html=True)
-
+                    with c1: st.plotly_chart(draw_donut(plan['train']['p'], plan['train']['c'], plan['train']['f'], plan['train']['cal']), use_container_width=True); st.table(make_meal_df(plan['train']['p'], plan['train']['c'], plan['train']['f'], 'train'))
+                    with c2: st.plotly_chart(draw_donut(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], plan['rest']['cal']), use_container_width=True); st.table(make_meal_df(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], 'rest'))
             with t2:
                 with st.form("chk"):
                     d = st.date_input("Ngày"); w = st.number_input("Cân nặng (kg)", value=client['start_weight']); cm = st.checkbox("Tuân thủ ăn uống"); cw = st.checkbox("Tuân thủ tập luyện"); nt = st.text_input("Ghi chú")
-                    if st.form_submit_button("LƯU CHECK-IN", type="primary"):
-                        insert_data("checkins", {"trainer_id": TRAINER_ID, "client_id": cid, "date": str(d), "weight": w, "compliance_meal": cm, "compliance_workout": cw, "notes": nt})
-                        st.success("Đã lưu!"); st.rerun()
-                logs = run_query("checkins", filter_col="client_id", filter_val=cid, order_by=("date", "desc"))
-                if not logs.empty: st.dataframe(logs)
-
+                    if st.form_submit_button("LƯU CHECK-IN", type="primary"): insert_data("checkins", {"trainer_id": TRAINER_ID, "client_id": cid, "date": str(d), "weight": w, "compliance_meal": cm, "compliance_workout": cw, "notes": nt}); st.success("Đã lưu!"); st.rerun()
+                logs = run_query("checkins", filter_col="client_id", filter_val=cid, order_by=("date", "desc")); st.dataframe(logs)
             with t3:
                 logs = run_query("checkins", filter_col="client_id", filter_val=cid, order_by=("date", "asc"))
                 if not logs.empty: fig = go.Figure(); fig.add_trace(go.Scatter(x=logs['date'], y=logs['weight'], mode='lines+markers', line=dict(color='#FFD700'))); st.plotly_chart(fig, use_container_width=True)
-                else: st.info("Chưa có dữ liệu.")
 
-    # --- 4. THÊM MỚI ---
     elif menu == "➕ THÊM MỚI":
         st.markdown("### 📝 HỒ SƠ KHÁCH HÀNG")
         with st.container():
@@ -405,22 +411,18 @@ else:
             with s1: st.text_input("Tên Gói Tập", key="pkg_in")
             with s2: st.number_input("Thời hạn (tháng)", min_value=1, key="dur_in")
             with s3: st.number_input("Giá trị HĐ (VNĐ)", min_value=0, step=500000, key="price_in")
-            
             def save_client():
                 if st.session_state.name_in:
-                    end = (datetime.now() + timedelta(days=st.session_state.dur_in*30)).strftime('%Y-%m-%d')
-                    start = datetime.now().strftime('%Y-%m-%d')
+                    end = (datetime.now() + timedelta(days=st.session_state.dur_in*30)).strftime('%Y-%m-%d'); start = datetime.now().strftime('%Y-%m-%d')
                     data = {"trainer_id": TRAINER_ID, "name": st.session_state.name_in, "phone": st.session_state.phone_in, "gender": st.session_state.gender_in, "age": st.session_state.age_in, "height": st.session_state.height_in, "start_weight": st.session_state.weight_in, "goal": st.session_state.goal_in, "activity": st.session_state.act_in, "bodyfat": st.session_state.bf_in, "level": st.session_state.level_in, "package_name": st.session_state.pkg_in, "duration_months": st.session_state.dur_in, "price": st.session_state.price_in, "start_date": start, "end_date": end, "status": 'Active'}
-                    insert_data("clients", data)
+                    insert_data("clients", data); 
                     for k in default_inputs: st.session_state[k] = default_inputs[k]
                     st.toast("Lưu thành công!", icon="🔥")
                 else: st.error("Nhập tên!")
-            st.button("🔥 LƯU HỒ SƠ & RESET", type="primary", use_container_width=True, on_click=save_client)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.button("🔥 LƯU HỒ SƠ & RESET", type="primary", use_container_width=True, on_click=save_client); st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 5. TÀI CHÍNH ---
-    elif menu == "💵 TÀI CHÍNH":
-        st.markdown("### 💰 DOANH THU")
+    elif menu == "💵 TÀI CHÍNH" or (menu == "💵 TÀI CHÍNH" and IS_ADMIN):
+        st.markdown("### 💰 DOANH THU HLV")
         df = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not df.empty: st.metric("TỔNG", f"{df['price'].sum():,} VNĐ"); st.dataframe(df[['name', 'package_name', 'start_date', 'price']], use_container_width=True)
         else: st.info("Chưa có dữ liệu.")
