@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V49 - BI MASTER)
+# 1. CẤU HÌNH & KẾT NỐI (V50 - ACCOUNTING MASTER)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -107,8 +107,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Montserrat:wght@400;600;800&display=swap');
     
     .stApp { background: radial-gradient(circle at 50% 10%, #1a0505 0%, #000000 90%); color: #E0E0E0; font-family: 'Montserrat', sans-serif; }
-    
-    /* LOGO CHUẨN CŨ */
     .main-logo { font-family: 'Teko', sans-serif; font-size: 70px; font-weight: 700; text-align: center; background: linear-gradient(180deg, #FFD700 10%, #B8860B 60%, #8B6914 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px; filter: drop-shadow(0px 2px 0px #000); }
     
     div[data-baseweb="input"], div[data-baseweb="select"] > div { background-color: #F5F5F5 !important; border: 1px solid #D1D1D1 !important; border-radius: 8px !important; color: #111 !important; }
@@ -228,7 +226,7 @@ else:
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
     # =========================================================================
-    # 📊 DASHBOARD SAAS (BI: BUSINESS INTELLIGENCE) - V49
+    # 📊 DASHBOARD SAAS (BI: ACCOUNTING MASTER)
     # =========================================================================
     if menu == "📊 DOANH CHỦ DASHBOARD" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DOANH SỐ & TĂNG TRƯỞNG</div>", unsafe_allow_html=True)
@@ -237,83 +235,74 @@ else:
         if not raw_users.empty:
             df_users = raw_users[raw_users['username'] != 'admin'].copy()
             
-            if not df_users.empty:
-                # 1. TÍNH TOÁN DỮ LIỆU THÔNG MINH
-                def process_smart_data(row):
-                    money, pk_name, months = parse_revenue_logic(row['full_name'])
-                    if row['expiry_date']:
-                        end_date = pd.to_datetime(row['expiry_date'])
-                        start_date = end_date - timedelta(days=months*30)
-                    else:
-                        start_date = datetime.now()
-                    return money, pk_name, start_date
+            # 1. TÍNH TOÁN DỮ LIỆU
+            def process_smart_data(row):
+                money, pk_name, months = parse_revenue_logic(row['full_name'])
+                if row['expiry_date']:
+                    end_date = pd.to_datetime(row['expiry_date'])
+                    start_date = end_date - timedelta(days=months*30)
+                else:
+                    start_date = datetime.now()
+                return money, pk_name, start_date
 
+            if not df_users.empty:
                 computed = df_users.apply(process_smart_data, axis=1, result_type='expand')
                 df_users['Revenue'] = computed[0]
                 df_users['Package'] = computed[1]
                 df_users['Start_Date'] = computed[2]
-                
-                # Tạo cột Tháng để nhóm (VD: 2026-01)
-                df_users['Month'] = df_users['Start_Date'].dt.strftime('%Y-%m')
+                df_users['Month_Year'] = df_users['Start_Date'].dt.strftime('%Y-%m') # Dùng để merge
 
-                # 2. HIỂN THỊ METRIC CHUNG
-                st.markdown("#### 💰 TỔNG QUAN")
-                today = datetime.now().date()
-                rev_today = df_users[df_users['Start_Date'].dt.date == today]['Revenue'].sum()
-                rev_total = df_users['Revenue'].sum()
-                arpu = rev_total / len(df_users) if len(df_users) > 0 else 0
-                
-                m1, m2, m3 = st.columns(3)
-                m1.metric("HÔM NAY", f"{rev_today:,.0f} đ", delta="Real-time")
-                m2.metric("TỔNG TRỌN ĐỜI", f"{rev_total:,.0f} đ")
-                m3.metric("ARPU / KHÁCH", f"{arpu:,.0f} đ")
-                st.divider()
+                # 2. TẠO KHUNG SƯỜN 12 THÁNG (SKELETON)
+                current_year = datetime.now().year
+                all_months = [f"{current_year}-{m:02d}" for m in range(1, 13)]
+                df_skeleton = pd.DataFrame({'Month_Year': all_months})
 
-                # 3. BẢNG PHÂN TÍCH THEO THÁNG (QUAN TRỌNG)
-                st.subheader("📅 PHÂN TÍCH DOANH THU THEO THÁNG")
-                
-                # Gom nhóm: Theo Tháng -> Tính Tổng Tiền và Đếm số lượng từng gói
-                # Pivot table: Index=Month, Columns=Package, Values=Count
-                pivot_pkg = df_users.pivot_table(index='Month', columns='Package', values='username', aggfunc='count', fill_value=0)
-                # Group by: Tính tổng Revenue
-                monthly_rev = df_users.groupby('Month')['Revenue'].sum()
-                
-                # Ghép lại thành 1 bảng duy nhất
-                analysis_df = pd.concat([monthly_rev, pivot_pkg], axis=1)
-                analysis_df.rename(columns={'Revenue': 'TỔNG DOANH THU'}, inplace=True)
-                
-                # Format cột tiền tệ cho đẹp (thêm 'đ' vào sau) - Chỉ hiển thị trên Streamlit
-                st.dataframe(analysis_df, use_container_width=True)
+                # 3. GOM NHÓM DỮ LIỆU THỰC
+                # Tổng tiền theo tháng
+                monthly_rev = df_users.groupby('Month_Year')['Revenue'].sum().reset_index()
+                # Đếm gói theo tháng (Pivot)
+                monthly_pkg = df_users.pivot_table(index='Month_Year', columns='Package', values='username', aggfunc='count', fill_value=0).reset_index()
 
-                st.divider()
+                # 4. MERGE DỮ LIỆU VÀO KHUNG 12 THÁNG (LEFT JOIN)
+                df_final = pd.merge(df_skeleton, monthly_rev, on='Month_Year', how='left').fillna(0)
+                if not monthly_pkg.empty:
+                    df_final = pd.merge(df_final, monthly_pkg, on='Month_Year', how='left').fillna(0)
+                else:
+                    # Nếu chưa bán đc gói nào, tạo cột giả định để không lỗi
+                    for p in ["1 Tháng", "3 Tháng", "6 Tháng", "1 Năm"]:
+                        df_final[p] = 0
 
-                # 4. BẢNG CHI TIẾT GIAO DỊCH (EXCEL LIKE)
-                st.subheader("📄 LỊCH SỬ GIAO DỊCH CHI TIẾT")
+                # 5. HIỂN THỊ BẢNG KẾ TOÁN
+                st.markdown(f"#### 📅 BÁO CÁO DOANH THU NĂM {current_year}")
                 
-                # Chuẩn bị dữ liệu sạch để xuất Excel
-                df_export = df_users[['Start_Date', 'username', 'full_name', 'Package', 'Revenue', 'is_active']].copy()
-                df_export.columns = ['Ngày đăng ký', 'Username', 'Họ tên', 'Gói', 'Số tiền', 'Trạng thái']
-                df_export['Ngày đăng ký'] = df_export['Ngày đăng ký'].dt.strftime('%Y-%m-%d')
+                # Format lại bảng cho đẹp
+                display_df = df_final.copy()
+                display_df['Revenue'] = display_df['Revenue'].apply(lambda x: f"{x:,.0f} đ")
+                display_df.rename(columns={'Month_Year': 'Tháng', 'Revenue': 'TỔNG DOANH THU'}, inplace=True)
                 
-                # Nút tải Excel
-                csv_fin = df_export.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Tải Báo Cáo Chi Tiết (Excel)", data=csv_fin, file_name="bao_cao_doanh_thu.csv", mime="text/csv")
-                
-                # Hiển thị bảng
-                st.dataframe(df_export, use_container_width=True)
+                st.dataframe(display_df, use_container_width=True)
 
                 st.divider()
 
-                # 5. BIỂU ĐỒ TĂNG TRƯỞNG
+                # 6. BIỂU ĐỒ (FIX LỖI)
                 st.subheader("📈 BIỂU ĐỒ TĂNG TRƯỞNG")
-                # Biểu đồ cột Doanh thu theo tháng
-                monthly_rev_reset = monthly_rev.reset_index()
-                monthly_rev_reset.columns = ['Tháng', 'Doanh Thu']
-                fig = px.bar(monthly_rev_reset, x='Tháng', y='Doanh Thu', text='Doanh Thu', color='Doanh Thu', color_continuous_scale='Gold')
-                fig.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+                # Dùng df_final (số liệu sạch) để vẽ, không dùng df_users trực tiếp
+                fig = px.bar(df_final, x='Month_Year', y='Revenue', 
+                             title=f"Doanh thu theo tháng {current_year}",
+                             labels={'Revenue': 'Doanh Thu (VNĐ)', 'Month_Year': 'Tháng'},
+                             text_auto='.2s',
+                             color='Revenue',
+                             color_continuous_scale='Gold')
                 st.plotly_chart(fig, use_container_width=True)
 
-            else: st.info("Chưa có khách hàng.")
+                # 7. BẢNG CHI TIẾT GIAO DỊCH (EXCEL LIKE)
+                st.subheader("📄 LỊCH SỬ GIAO DỊCH CHI TIẾT")
+                df_export = df_users[['Start_Date', 'username', 'full_name', 'Package', 'Revenue', 'is_active']].copy()
+                df_export.columns = ['Ngày ĐK', 'User', 'Họ Tên', 'Gói', 'Số Tiền', 'Trạng Thái']
+                df_export['Ngày ĐK'] = df_export['Ngày ĐK'].dt.strftime('%Y-%m-%d')
+                st.dataframe(df_export, use_container_width=True)
+
+            else: st.info("Chưa có dữ liệu.")
         else: st.info("Database trống.")
 
     # =========================================================================
@@ -359,13 +348,13 @@ else:
             with c_export:
                 st.write("") 
                 csv = df_view.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Xuất Excel", data=csv, file_name="danh_sach_crm.csv", mime="text/csv", use_container_width=True)
+                st.download_button("📥 Xuất Excel", data=csv, file_name="danh_sach.csv", mime="text/csv", use_container_width=True)
 
             # ÁP DỤNG LỌC
             if search: df_view = df_view[df_view['username'].str.contains(search, case=False) | df_view['Tên khách hàng'].str.contains(search, case=False)]
             if filter_stt != "Tất cả": df_view = df_view[df_view['Trạng thái'] == filter_stt]
 
-            # HIỂN THỊ BẢNG
+            # HIỂN THỊ BẢNG (ĐÃ CÓ CỘT GÓI & GIÁ RIÊNG)
             st.dataframe(
                 df_view[['Trạng thái', 'username', 'Tên khách hàng', 'Gói & Giá', 'email', 'expiry_date']], 
                 use_container_width=True,
