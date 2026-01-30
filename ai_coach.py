@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V40 - STABLE FIX)
+# 1. CẤU HÌNH & KẾT NỐI (V42 - LOGIN FIX)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -31,7 +31,7 @@ def send_telegram(message):
         chat_id = st.secrets["telegram"]["chat_id"]
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         requests.post(url, json={"chat_id": chat_id, "text": message})
-    except: pass # Bỏ qua nếu chưa cấu hình Telegram
+    except: pass 
 
 def run_query(table_name, select="*", order_by=None, filter_col=None, filter_val=None):
     try:
@@ -54,12 +54,21 @@ def login_user(username, password):
     if not df.empty:
         user = df.iloc[0]
         # LOGIC: CHẶN NẾU CHƯA ĐƯỢC ADMIN KÍCH HOẠT
-        if not user.get('is_active', False): 
+        # Ép kiểu về bool để tránh lỗi so sánh
+        is_active = bool(user.get('is_active', False))
+        
+        if not is_active: 
             return "LOCKED" 
+            
+        # Kiểm tra mật khẩu
         try:
-            if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')): return user
+            # Hash check
+            if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')): 
+                return user.to_dict() # QUAN TRỌNG: Trả về Dict để tránh lỗi ValueError
         except:
-            if password == user['password_hash']: return user
+            # Plain text check (cho pass cũ)
+            if password == user['password_hash']: 
+                return user.to_dict() # QUAN TRỌNG: Trả về Dict
     return None
 
 def register_user(u, p, n, e, package_info):
@@ -67,10 +76,8 @@ def register_user(u, p, n, e, package_info):
     if not check.empty: return False, "Tên đăng nhập đã tồn tại"
     
     hashed = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    # Lưu tên kèm gói cước để Admin dễ nhận biết
     full_name_info = f"{n} ({package_info})"
     
-    # Mặc định is_active = False (Chờ thanh toán)
     ok, msg = insert_data("users", {
         "username": u, "password_hash": hashed, 
         "full_name": full_name_info, 
@@ -150,7 +157,7 @@ if not st.session_state.logged_in:
                 p = st.text_input("Password", type="password")
                 if st.form_submit_button("🚀 ĐĂNG NHẬP", type="primary", use_container_width=True):
                     res = login_user(u, p)
-                    if res == "LOCKED":
+                    if isinstance(res, str) and res == "LOCKED":
                         st.warning("🔒 Tài khoản đang chờ duyệt thanh toán! Vui lòng liên hệ Admin.")
                     elif res:
                         st.session_state.logged_in = True
@@ -158,7 +165,7 @@ if not st.session_state.logged_in:
                         st.success("Đăng nhập thành công!"); time.sleep(0.5); st.rerun()
                     else: st.error("Sai thông tin đăng nhập!")
         
-        # TAB 2: ĐĂNG KÝ & THANH TOÁN QR (ĐÃ SỬA LỖI MẤT DỮ LIỆU)
+        # TAB 2: ĐĂNG KÝ & THANH TOÁN QR
         with tab2:
             if 'reg_step' not in st.session_state: st.session_state.reg_step = 1
             
@@ -236,7 +243,8 @@ if not st.session_state.logged_in:
                 with c_img:
                     st.image(qr_url, caption="Mở App Ngân hàng quét mã này", width=300)
                 
-                st.info("⚠️ Hệ thống thống thanh toán tự động. Sau khi chuyển khoản xong, vui lòng chờ 1-5 phút để tài khoản được kích hoạt.")
+                st.info("⚡ Hệ thống thanh toán tự động. Sau khi chuyển khoản, vui lòng đợi 1-5 phút để hệ thống xác nhận và kích hoạt tài khoản.")
+                
                 if st.button("VỀ TRANG CHỦ"): 
                     st.session_state.reg_step = 1; st.rerun()
 
@@ -408,4 +416,3 @@ else:
         df = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not df.empty: st.metric("TỔNG", f"{df['price'].sum():,} VNĐ"); st.dataframe(df[['name', 'package_name', 'start_date', 'price']], use_container_width=True)
         else: st.info("Chưa có dữ liệu.")
-
