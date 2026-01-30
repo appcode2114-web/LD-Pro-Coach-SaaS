@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V55 - SUPER MANAGER)
+# 1. CẤU HÌNH & KẾT NỐI (V56 - SUPER SYNC)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -50,9 +50,13 @@ def update_data(table_name, update_dict, match_col, match_val):
     except: return False
 
 def delete_data(table_name, match_col, match_val):
-    """Hàm xoá dữ liệu"""
-    try: supabase.table(table_name).delete().eq(match_col, match_val).execute(); return True
-    except: return False
+    """Hàm xoá dữ liệu tận gốc"""
+    try: 
+        supabase.table(table_name).delete().eq(match_col, match_val).execute()
+        return True
+    except Exception as e: 
+        print(e)
+        return False
 
 def login_user(username, password):
     df = run_query("users", filter_col="username", filter_val=username)
@@ -71,19 +75,11 @@ def register_user(u, p, n, e, package_info):
     if not check.empty: return False, "Tên đăng nhập đã tồn tại"
     hashed = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     full_name_info = f"{n} ({package_info})"
-    
-    # TỰ ĐỘNG LƯU NGÀY GIỜ HIỆN TẠI VÀO DB
     now_iso = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
     ok, msg = insert_data("users", {
-        "username": u, 
-        "password_hash": hashed, 
-        "full_name": full_name_info, 
-        "email": e, 
-        "expiry_date": None, 
-        "is_active": False,
-        "created_at": now_iso, # Lưu ngày đăng ký tự động
-        "note": "" # Khởi tạo ghi chú trống
+        "username": u, "password_hash": hashed, "full_name": full_name_info, 
+        "email": e, "expiry_date": None, "is_active": False,
+        "created_at": now_iso, "note": ""
     })
     return ok, ""
 
@@ -94,7 +90,7 @@ def parse_revenue_logic(full_name):
     if "1 Năm" in full_name: return 1500000, "1 Năm", 12
     return 0, "Khác", 0
 
-# --- FORMULAS (GIỮ NGUYÊN) ---
+# --- FORMULAS ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
 
 def calc_basic(w, h, a, g, act, goal):
@@ -241,10 +237,8 @@ else:
             # Logic tính toán ngày tháng
             def process_smart_data(row):
                 money, pk_name, months = parse_revenue_logic(row['full_name'])
-                # Ưu tiên lấy created_at nếu có
                 if 'created_at' in row and row['created_at']:
                     start = pd.to_datetime(row['created_at'])
-                # Nếu không, dùng logic suy luận cũ
                 elif row['expiry_date']:
                     end = pd.to_datetime(row['expiry_date'])
                     start = end - timedelta(days=months*30)
@@ -303,7 +297,7 @@ else:
                     st.progress(min(actual/target, 1.0))
                     st.metric("Đã đạt", f"{actual:,.0f} / {target:,.0f} VNĐ")
 
-                with tab5: # DỮ LIỆU GỐC (SMART FILTER)
+                with tab5: # DỮ LIỆU GỐC
                     st.subheader("📄 DỮ LIỆU GỐC")
                     col_filter, col_dl = st.columns([3, 1])
                     with col_filter:
@@ -330,59 +324,68 @@ else:
         else: st.info("Database trống.")
 
     # =========================================================================
-    # 🔧 QUẢN LÝ USER (SUPER ADMIN: DELETE & EDIT)
+    # 🔧 QUẢN LÝ USER (SUPER SYNC V56)
     # =========================================================================
     elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>QUẢN LÝ USER</div>", unsafe_allow_html=True)
         raw = run_query("users")
+        
         if not raw.empty:
+            # Chuẩn bị dữ liệu hiển thị (Thêm cột Note nếu có)
             df = raw[raw['username'] != 'admin'].copy()
-            # Chia 2 cột: Bảng danh sách & Form chỉnh sửa
-            c_table, c_edit = st.columns([1.5, 1])
+            if 'note' not in df.columns: df['note'] = "" # Fallback nếu chưa có note
             
+            # --- CỘT 1: BẢNG TƯƠNG TÁC ---
+            c_table, c_edit = st.columns([1.5, 1])
             with c_table:
                 st.subheader("Danh sách User")
-                # Hiển thị bảng rút gọn
-                st.dataframe(df[['username', 'full_name', 'is_active', 'expiry_date']], use_container_width=True, height=500)
+                # Hiển thị bảng chọn được dòng
+                event = st.dataframe(
+                    df[['username', 'full_name', 'is_active', 'note']], 
+                    use_container_width=True, 
+                    height=500,
+                    selection_mode="single-row",
+                    on_select="rerun"
+                )
 
+            # --- CỘT 2: FORM CHỈNH SỬA ---
             with c_edit:
                 st.subheader("🛠️ Chỉnh sửa / Xóa")
-                selected_u = st.selectbox("Chọn User để thao tác:", df['username'].tolist())
                 
-                if selected_u:
-                    # Lấy thông tin user đang chọn
-                    user_data = df[df['username'] == selected_u].iloc[0]
+                # Kiểm tra xem có dòng nào được chọn không
+                if event.selection.rows:
+                    idx = event.selection.rows[0]
+                    user_data = df.iloc[idx]
+                    selected_u = user_data['username']
                     
-                    with st.form("edit_user_form"):
+                    st.info(f"Đang chọn: **{selected_u}**")
+                    
+                    with st.form("edit_form"):
                         new_name = st.text_input("Họ tên & Gói:", value=user_data['full_name'])
+                        new_note = st.text_area("Ghi chú (Note):", value=str(user_data['note']) if user_data['note'] else "")
                         
-                        # Xử lý Note (Nếu chưa có cột note thì để trống)
-                        current_note = user_data.get('note', '')
-                        new_note = st.text_area("Ghi chú (Note):", value=current_note if pd.notna(current_note) else "")
-                        
-                        # Xử lý ngày hết hạn
                         curr_exp = user_data['expiry_date']
                         if pd.notna(curr_exp):
-                            new_exp = st.date_input("Ngày hết hạn:", value=pd.to_datetime(curr_exp))
+                            new_exp = st.date_input("Hạn dùng:", value=pd.to_datetime(curr_exp))
                         else:
-                            new_exp = st.date_input("Ngày hết hạn:", value=datetime.now())
+                            new_exp = st.date_input("Hạn dùng:", value=datetime.now())
                             
-                        new_active = st.checkbox("Đã thanh toán (Active)", value=bool(user_data['is_active']))
+                        new_active = st.checkbox("Active (Đã TT)", value=bool(user_data['is_active']))
                         
-                        c_update, c_delete = st.columns(2)
+                        c_up, c_del = st.columns(2)
                         
-                        if c_update.form_submit_button("💾 CẬP NHẬT THÔNG TIN"):
+                        if c_up.form_submit_button("💾 LƯU THAY ĐỔI"):
                             update_data("users", {
-                                "full_name": new_name,
-                                "note": new_note,
-                                "expiry_date": str(new_exp),
-                                "is_active": new_active
+                                "full_name": new_name, "note": new_note,
+                                "expiry_date": str(new_exp), "is_active": new_active
                             }, "username", selected_u)
-                            st.success("Đã cập nhật!"); time.sleep(1); st.rerun()
+                            st.success("Đã lưu!"); time.sleep(0.5); st.rerun()
                             
-                        if c_delete.form_submit_button("🗑️ XÓA VĨNH VIỄN", type="primary"):
+                        if c_del.form_submit_button("🗑️ XÓA NGAY", type="primary"):
                             delete_data("users", "username", selected_u)
-                            st.warning(f"Đã xóa user {selected_u}!"); time.sleep(1); st.rerun()
+                            st.warning(f"Đã xóa {selected_u}!"); time.sleep(0.5); st.rerun()
+                else:
+                    st.info("👈 Hãy chọn một dòng bên trái để sửa.")
 
         else: st.info("Chưa có user nào.")
 
