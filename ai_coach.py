@@ -236,7 +236,7 @@ if not st.session_state.logged_in:
                 with c_img:
                     st.image(qr_url, caption="Mở App Ngân hàng quét mã này", width=300)
                 
-                st.info("⚠️ Hệ thống sẽ gửi thông báo đến Admin ngay lập tức. Sau khi chuyển khoản xong, vui lòng chờ 5-10 phút để tài khoản được kích hoạt.")
+                st.info("⚠️ Hệ thống thống thanh toán tự động. Sau khi chuyển khoản xong, vui lòng chờ 1-5 phút để tài khoản được kích hoạt.")
                 if st.button("VỀ TRANG CHỦ"): 
                     st.session_state.reg_step = 1; st.rerun()
 
@@ -408,3 +408,4 @@ else:
         df = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not df.empty: st.metric("TỔNG", f"{df['price'].sum():,} VNĐ"); st.dataframe(df[['name', 'package_name', 'start_date', 'price']], use_container_width=True)
         else: st.info("Chưa có dữ liệu.")
+
