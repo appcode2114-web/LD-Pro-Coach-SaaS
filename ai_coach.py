@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V52 - CFO EDITION)
+# 1. CẤU HÌNH & KẾT NỐI (V53 - DRILL-DOWN REPORT)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -77,7 +77,7 @@ def parse_revenue_logic(full_name):
     if "1 Năm" in full_name: return 1500000, "1 Năm", 12
     return 0, "Khác", 0
 
-# --- FORMULAS (GIỮ NGUYÊN) ---
+# --- FORMULAS ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
 
 def calc_basic(w, h, a, g, act, goal):
@@ -105,17 +105,23 @@ def draw_donut(p, c, f, cal):
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Montserrat:wght@400;600;800&display=swap');
+    
     .stApp { background: radial-gradient(circle at 50% 10%, #1a0505 0%, #000000 90%); color: #E0E0E0; font-family: 'Montserrat', sans-serif; }
     .main-logo { font-family: 'Teko', sans-serif; font-size: 70px; font-weight: 700; text-align: center; background: linear-gradient(180deg, #FFD700 10%, #B8860B 60%, #8B6914 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px; filter: drop-shadow(0px 2px 0px #000); }
+    
     div[data-baseweb="input"], div[data-baseweb="select"] > div { background-color: #F5F5F5 !important; border: 1px solid #D1D1D1 !important; border-radius: 8px !important; color: #111 !important; }
     input[class*="st-"], div[data-baseweb="select"] span { color: #111 !important; font-weight: 600; }
+    
     .css-card { background-color: rgba(20, 20, 20, 0.6); backdrop-filter: blur(10px); border: 1px solid #222; border-left: 3px solid #D4AF37; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
     .stButton > button { background: linear-gradient(90deg, #8B0000 0%, #C00000 100%); color: white; font-family: 'Teko', sans-serif; font-size: 22px; width: 100%; transition: 0.3s; }
     .stButton > button:hover { background: linear-gradient(90deg, #C00000 0%, #FF0000 100%); box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4); }
+    
     section[data-testid="stSidebar"] { background-color: #080808; border-right: 1px solid #222; }
     section[data-testid="stSidebar"] * { color: #EEE !important; }
+
     div[data-testid="stTable"] th { background-color: #D4AF37 !important; color: #000000 !important; font-family: 'Teko', sans-serif !important; }
     div[data-testid="stTable"] td { background-color: #222 !important; color: #FFFFFF !important; border-bottom: 1px solid #444 !important; }
+    
     div[role="radiogroup"] label { border: 1px solid #444; padding: 10px; border-radius: 5px; background: #222; margin-bottom: 5px; }
     div[role="radiogroup"] label[data-checked="true"] { border-color: #D4AF37; background: #333; }
 </style>
@@ -206,7 +212,7 @@ else:
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
     # =========================================================================
-    # 📊 DASHBOARD SAAS - V52 CFO EDITION
+    # 📊 DASHBOARD SAAS (BI: DRILL-DOWN REPORT - V53)
     # =========================================================================
     if menu == "📊 DOANH CHỦ DASHBOARD" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DOANH SỐ & TĂNG TRƯỞNG</div>", unsafe_allow_html=True)
@@ -229,103 +235,75 @@ else:
                 df_users['Revenue'] = computed[0]
                 df_users['Package'] = computed[1]
                 df_users['Start_Date'] = computed[2]
-                df_users['Month_Year'] = df_users['Start_Date'].dt.strftime('%Y-%m')
+                df_users['Month_Sort'] = df_users['Start_Date'].dt.strftime('%Y-%m') # Dùng để lọc
 
                 # --- PHÂN TAB CHỨC NĂNG ---
-                tab1, tab2, tab3, tab4, tab5 = st.tabs([
-                    "🏠 TỔNG QUAN", "📅 BÁO CÁO THÁNG", "📦 HIỆU QUẢ GÓI", "🎯 MỤC TIÊU", "📄 DỮ LIỆU GỐC"
-                ])
+                tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 TỔNG QUAN", "📅 BÁO CÁO THÁNG", "📦 HIỆU QUẢ GÓI", "🎯 MỤC TIÊU", "📄 DỮ LIỆU GỐC"])
 
-                # TAB 1: TỔNG QUAN
-                with tab1:
-                    st.markdown("#### ⚡ CHỈ SỐ QUAN TRỌNG (KPIs)")
+                with tab1: # TỔNG QUAN
                     today = datetime.now().date()
                     rev_today = df_users[df_users['Start_Date'].dt.date == today]['Revenue'].sum()
                     rev_total = df_users['Revenue'].sum()
-                    arpu = rev_total / len(df_users) if len(df_users) > 0 else 0
-                    
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("HÔM NAY", f"{rev_today:,.0f} đ", delta="Real-time")
-                    m2.metric("TỔNG TRỌN ĐỜI", f"{rev_total:,.0f} đ")
-                    m3.metric("ARPU / KHÁCH", f"{arpu:,.0f} đ")
-                    
-                    st.divider()
-                    st.markdown("#### 📈 XU HƯỚNG DÒNG TIỀN (THEO NGÀY)")
+                    m1, m2 = st.columns(2)
+                    m1.metric("HÔM NAY", f"{rev_today:,.0f} đ"); m2.metric("TỔNG TRỌN ĐỜI", f"{rev_total:,.0f} đ")
+                    # Chart
                     df_trend = df_users.groupby(df_users['Start_Date'].dt.date)['Revenue'].sum().reset_index()
-                    df_trend.columns = ['Ngày', 'Doanh Thu']
-                    fig_trend = px.line(df_trend, x='Ngày', y='Doanh Thu', markers=True, color_discrete_sequence=['#FFD700'])
-                    st.plotly_chart(fig_trend, use_container_width=True)
+                    fig = px.bar(df_trend, x='Start_Date', y='Revenue', color_discrete_sequence=['#FFD700'], title="Dòng tiền theo ngày")
+                    st.plotly_chart(fig, use_container_width=True)
 
-                # TAB 2: BÁO CÁO THÁNG (KẾ TOÁN)
-                with tab2:
-                    st.markdown(f"#### 📅 BÁO CÁO CHI TIẾT NĂM {datetime.now().year}")
+                with tab2: # BÁO CÁO THÁNG (DRILL-DOWN)
+                    st.markdown("### 🗓️ SỔ CÁI DOANH THU 2026")
                     current_year = datetime.now().year
-                    months_skeleton = [f"{current_year}-{m:02d}" for m in range(1, 13)]
-                    df_skeleton = pd.DataFrame({'Month_Year': months_skeleton})
                     
-                    monthly_rev = df_users.groupby('Month_Year')['Revenue'].sum().reset_index()
-                    monthly_pkg = df_users.pivot_table(index='Month_Year', columns='Package', values='username', aggfunc='count', fill_value=0).reset_index()
-                    
-                    df_report = pd.merge(df_skeleton, monthly_rev, on='Month_Year', how='left').fillna(0)
-                    if not monthly_pkg.empty:
-                        df_report = pd.merge(df_report, monthly_pkg, on='Month_Year', how='left').fillna(0)
-                    
-                    # Thêm dòng Tổng cộng
-                    total_row = pd.DataFrame(df_report.sum(numeric_only=True)).T
-                    total_row['Month_Year'] = "🛑 TỔNG CỘNG"
-                    df_final_report = pd.concat([df_report, total_row], ignore_index=True)
-                    
-                    # Format bảng
-                    df_display = df_final_report.copy()
-                    df_display['Revenue'] = df_display['Revenue'].apply(lambda x: f"{x:,.0f}")
-                    st.dataframe(df_display.rename(columns={'Month_Year': 'Tháng', 'Revenue': 'DOANH THU (VNĐ)'}), use_container_width=True)
+                    # VÒNG LẶP 12 THÁNG
+                    for m in range(1, 13):
+                        month_key = f"{current_year}-{m:02d}"
+                        
+                        # Lọc dữ liệu tháng đó
+                        df_month = df_users[df_users['Month_Sort'] == month_key]
+                        
+                        # Tính tổng tháng
+                        total_rev_month = df_month['Revenue'].sum()
+                        total_orders = len(df_month)
+                        
+                        # Màu sắc tiêu đề: Có tiền -> Xanh đậm, Không tiền -> Xám
+                        header_color = "green" if total_rev_month > 0 else "grey"
+                        
+                        # TẠO EXPANDER (SỔ RA / THU VÀO)
+                        with st.expander(f"📁 Tháng {m:02d} - Doanh thu: {total_rev_month:,.0f} VNĐ ({total_orders} đơn)"):
+                            if not df_month.empty:
+                                # Chuẩn bị bảng chi tiết
+                                df_detail = df_month[['Start_Date', 'full_name', 'Package', 'Revenue']].copy()
+                                df_detail['Start_Date'] = df_detail['Start_Date'].dt.strftime('%d/%m/%Y %H:%M')
+                                df_detail['Revenue'] = df_detail['Revenue'].apply(lambda x: f"{x:,.0f}")
+                                df_detail.columns = ['Thời gian', 'Khách hàng (Gói)', 'Gói', 'Số tiền']
+                                
+                                st.dataframe(df_detail, use_container_width=True)
+                                
+                                # Dòng tổng kết cuối bảng
+                                st.markdown(f"**👉 Tổng cộng Tháng {m}:** :green[{total_rev_month:,.0f} VNĐ]")
+                            else:
+                                st.caption("Không có giao dịch nào trong tháng này.")
 
-                # TAB 3: HIỆU QUẢ GÓI
-                with tab3:
-                    c_pie, c_bar = st.columns(2)
-                    with c_pie:
-                        st.subheader("Số lượng bán")
-                        pkg_count = df_users['Package'].value_counts().reset_index()
-                        pkg_count.columns = ['Gói', 'Số lượng']
-                        fig_pie = px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                    with c_bar:
-                        st.subheader("Doanh thu mang lại")
-                        pkg_rev = df_users.groupby('Package')['Revenue'].sum().reset_index()
-                        fig_bar = px.bar(pkg_rev, x='Package', y='Revenue', text_auto='.2s', color='Revenue', color_continuous_scale='Greens')
-                        st.plotly_chart(fig_bar, use_container_width=True)
+                with tab3: # HIỆU QUẢ GÓI
+                    pkg_count = df_users['Package'].value_counts().reset_index()
+                    pkg_count.columns = ['Gói', 'Số lượng']
+                    st.plotly_chart(px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4), use_container_width=True)
 
-                # TAB 4: MỤC TIÊU
-                with tab4:
-                    st.subheader("🎯 MỤC TIÊU THÁNG NAY")
-                    target = st.slider("Đặt mục tiêu doanh số (VNĐ):", 1000000, 100000000, 20000000, step=1000000)
-                    
-                    # Tính thực tế tháng này
-                    this_month_str = datetime.now().strftime('%Y-%m')
-                    actual = df_users[df_users['Month_Year'] == this_month_str]['Revenue'].sum()
-                    
-                    progress = min(actual / target, 1.0)
-                    st.progress(progress)
-                    
-                    col_target1, col_target2 = st.columns(2)
-                    col_target1.metric("Thực tế đạt", f"{actual:,.0f} VNĐ")
-                    col_target2.metric("Còn thiếu", f"{(target - actual):,.0f} VNĐ" if target > actual else "0 VNĐ")
-                    
-                    if actual >= target: st.success("🎉 CHÚC MỪNG! BẠN ĐÃ ĐẠT MỤC TIÊU THÁNG!")
-                    else: st.info("Cố lên! Bạn sắp đạt được rồi.")
+                with tab4: # MỤC TIÊU
+                    target = st.number_input("Mục tiêu tháng này (VNĐ):", value=20000000, step=1000000)
+                    this_month = datetime.now().strftime('%Y-%m')
+                    actual = df_users[df_users['Month_Sort'] == this_month]['Revenue'].sum()
+                    st.progress(min(actual/target, 1.0))
+                    st.metric("Đã đạt", f"{actual:,.0f} / {target:,.0f} VNĐ")
 
-                # TAB 5: DỮ LIỆU GỐC
-                with tab5:
-                    st.subheader("📄 NHẬT KÝ GIAO DỊCH (DATA RAW)")
-                    df_export = df_users[['Start_Date', 'username', 'full_name', 'Package', 'Revenue', 'is_active']].copy()
-                    df_export.columns = ['Ngày ĐK', 'User', 'Họ Tên', 'Gói', 'Số Tiền', 'Trạng Thái']
-                    df_export['Ngày ĐK'] = df_export['Ngày ĐK'].dt.strftime('%Y-%m-%d')
-                    
-                    csv_fin = df_export.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Tải Xuống (Excel/CSV)", data=csv_fin, file_name="transaction_history.csv", mime="text/csv")
+                with tab5: # DỮ LIỆU GỐC
+                    df_export = df_users[['Start_Date', 'username', 'full_name', 'Package', 'Revenue']].copy()
+                    df_export['Start_Date'] = df_export['Start_Date'].dt.strftime('%Y-%m-%d')
+                    st.download_button("📥 Tải Excel", df_export.to_csv().encode('utf-8'), "data.csv", "text/csv")
                     st.dataframe(df_export, use_container_width=True)
 
-            else: st.info("Chưa có dữ liệu.")
+            else: st.info("Chưa có khách hàng.")
         else: st.info("Database trống.")
 
     # --- CÁC PHẦN KHÁC (CRM, HLV...) GIỮ NGUYÊN ---
@@ -334,17 +312,13 @@ else:
         raw = run_query("users")
         if not raw.empty:
             df = raw[raw['username'] != 'admin'].copy()
-            # Xử lý hiển thị
             def nice_view(row):
                 m, p, _ = parse_revenue_logic(row['full_name'])
                 stt = "🟢 Active" if row['is_active'] else "🔴 Pending"
                 return stt, f"{p} - {m:,.0f}đ"
             res = df.apply(nice_view, axis=1, result_type='expand')
             df['Trạng thái'] = res[0]; df['Gói'] = res[1]
-            
             st.dataframe(df[['Trạng thái', 'username', 'full_name', 'Gói', 'expiry_date']], use_container_width=True)
-            
-            # Action Panel
             c1, c2 = st.columns(2)
             with c1:
                 with st.form("act"):
