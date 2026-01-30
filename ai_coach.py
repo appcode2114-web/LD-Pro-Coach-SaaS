@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V42 - LOGIN FIX)
+# 1. CẤU HÌNH & KẾT NỐI (V43 - ADMIN PRO)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -54,21 +54,17 @@ def login_user(username, password):
     if not df.empty:
         user = df.iloc[0]
         # LOGIC: CHẶN NẾU CHƯA ĐƯỢC ADMIN KÍCH HOẠT
-        # Ép kiểu về bool để tránh lỗi so sánh
         is_active = bool(user.get('is_active', False))
         
         if not is_active: 
             return "LOCKED" 
             
-        # Kiểm tra mật khẩu
         try:
-            # Hash check
             if bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')): 
-                return user.to_dict() # QUAN TRỌNG: Trả về Dict để tránh lỗi ValueError
+                return user.to_dict()
         except:
-            # Plain text check (cho pass cũ)
             if password == user['password_hash']: 
-                return user.to_dict() # QUAN TRỌNG: Trả về Dict
+                return user.to_dict()
     return None
 
 def register_user(u, p, n, e, package_info):
@@ -179,7 +175,6 @@ if not st.session_state.logged_in:
                 
                 if st.button("TIẾP THEO ➡️", use_container_width=True):
                     if nu and np and nn and ne: 
-                        # === LƯU DỮ LIỆU VÀO KHO AN TOÀN ===
                         st.session_state.saved_u = nu
                         st.session_state.saved_p = np
                         st.session_state.saved_n = nn
@@ -204,7 +199,6 @@ if not st.session_state.logged_in:
                     if st.button("⬅️ QUAY LẠI"): st.session_state.reg_step = 1; st.rerun()
                 with c_next:
                     if st.button("ĐĂNG KÝ & THANH TOÁN ➡️", type="primary"):
-                        # DÙNG DỮ LIỆU TỪ KHO AN TOÀN (saved_)
                         ok, msg = register_user(
                             st.session_state.saved_u, 
                             st.session_state.saved_p, 
@@ -215,7 +209,6 @@ if not st.session_state.logged_in:
                         if ok:
                             st.session_state.final_money = packages[pkg_choice]
                             st.session_state.reg_step = 3
-                            # Gửi Telegram
                             try:
                                 msg_tele = f"💰 KHÁCH MỚI!\nUser: {st.session_state.saved_u}\nTên: {st.session_state.saved_n}\nGói: {pkg_choice}\nTiền: {packages[pkg_choice]:,}đ"
                                 send_telegram(msg_tele)
@@ -235,7 +228,6 @@ if not st.session_state.logged_in:
                 amount = st.session_state.final_money
                 content = f"KICH HOAT {st.session_state.saved_u}"
                 
-                # TẠO LINK QR VIETQR
                 qr_url = f"https://img.vietqr.io/image/{bank_id}-{acc_no}-compact.jpg?amount={amount}&addInfo={content}&accountName={acc_name}"
                 
                 st.success("✅ ĐĂNG KÝ THÀNH CÔNG! VUI LÒNG THANH TOÁN ĐỂ KÍCH HOẠT.")
@@ -258,22 +250,38 @@ else:
     for k,v in default_inputs.items():
         if k not in st.session_state: st.session_state[k] = v
 
+    # --- SIDEBAR (ĐÃ TÁCH BIỆT ADMIN) ---
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/8847/8847419.png", width=80)
         st.markdown(f"### 👤 {user['full_name']}")
-        days_left = (pd.to_datetime(user['expiry_date']) - datetime.now()).days if user['expiry_date'] else 0
-        st.caption(f"Hạn dùng: {days_left} ngày")
         
+        # LOGIC RIÊNG CHO ADMIN (KHÔNG HIỆN NGÀY)
         if IS_ADMIN:
-            st.markdown("---"); st.markdown("### 👑 SUPER ADMIN")
-            menu = st.radio("MENU ADMIN", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH", "🔧 QUẢN TRỊ ADMIN"])
+            st.info("🔰 QUẢN TRỊ VIÊN") # Thẻ Admin riêng biệt
+        else:
+            # LOGIC CHO USER THƯỜNG (HIỆN NGÀY)
+            if user['expiry_date']:
+                days_left = (pd.to_datetime(user['expiry_date']) - datetime.now()).days
+                if days_left > 0:
+                    st.caption(f"⏳ Hạn dùng: {days_left} ngày")
+                else:
+                    st.error("⚠️ Đã hết hạn")
+            else:
+                st.warning("Chưa kích hoạt")
+
+        if IS_ADMIN:
+            st.markdown("---")
+            # MENU RIÊNG CHO ADMIN
+            menu = st.radio("MENU QUẢN TRỊ", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH", "🔧 DUYỆT THANH TOÁN"])
         else:
             st.markdown("---")
+            # MENU CHO USER THƯỜNG
             menu = st.radio("MENU", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH"])
+
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
-    # --- 1. ADMIN PANEL (NÂNG CẤP) ---
-    if menu == "🔧 QUẢN TRỊ ADMIN" and IS_ADMIN:
+    # --- 1. ADMIN PANEL (DUYỆT THANH TOÁN) ---
+    if menu == "🔧 DUYỆT THANH TOÁN" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DUYỆT THANH TOÁN</div>", unsafe_allow_html=True)
         # Chỉ hiện user chưa active lên đầu
         all_users = run_query("users", order_by=("is_active", "asc"))
