@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V44 - DASHBOARD PRO)
+# 1. CẤU HÌNH & KẾT NỐI (V47 - FINAL STABLE)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -67,18 +67,20 @@ def register_user(u, p, n, e, package_info):
     if not check.empty: return False, "Tên đăng nhập đã tồn tại"
     hashed = bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     full_name_info = f"{n} ({package_info})"
+    # GIỮ NGUYÊN CẤU TRÚC GỐC - KHÔNG THÊM CỘT LẠ ĐỂ TRÁNH LỖI
     ok, msg = insert_data("users", {"username": u, "password_hash": hashed, "full_name": full_name_info, "email": e, "expiry_date": None, "is_active": False})
     return ok, ""
 
-def estimate_revenue(full_name):
-    """Hàm tách tiền từ tên gói (Ước tính doanh thu)"""
-    if "1 Tháng" in full_name: return 200000, "1 Tháng"
-    if "3 Tháng" in full_name: return 500000, "3 Tháng"
-    if "6 Tháng" in full_name: return 900000, "6 Tháng"
-    if "1 Năm" in full_name: return 1500000, "1 Năm"
-    return 0, "Unknown"
+def parse_revenue_logic(full_name):
+    """Hàm thông minh: Tự suy ra tiền và thời gian từ tên gói"""
+    # Trả về: (Số tiền, Tên gói, Số tháng)
+    if "1 Tháng" in full_name: return 200000, "1 Tháng", 1
+    if "3 Tháng" in full_name: return 500000, "3 Tháng", 3
+    if "6 Tháng" in full_name: return 900000, "6 Tháng", 6
+    if "1 Năm" in full_name: return 1500000, "1 Năm", 12
+    return 0, "Khác", 0
 
-# --- FORMULAS ---
+# --- FORMULAS (GIỮ NGUYÊN BẢN GỐC) ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
 
 def calc_basic(w, h, a, g, act, goal):
@@ -211,141 +213,167 @@ else:
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/8847/8847419.png", width=80)
         st.markdown(f"### 👤 {user['full_name']}")
-        if IS_ADMIN:
-            st.info("🔰 QUẢN TRỊ VIÊN")
+        if IS_ADMIN: st.info("🔰 DOANH CHỦ SAAS")
         else:
             if user['expiry_date']:
                 days_left = (pd.to_datetime(user['expiry_date']) - datetime.now()).days
                 if days_left > 0: st.caption(f"⏳ Hạn dùng: {days_left} ngày")
                 else: st.error("⚠️ Đã hết hạn")
             else: st.warning("Chưa kích hoạt")
+        
+        st.markdown("---")
         if IS_ADMIN:
-            st.markdown("---")
-            menu = st.radio("QUẢN TRỊ", ["📊 DASHBOARD SAAS", "🔧 QUẢN LÝ USER", "💵 TÀI CHÍNH", "👥 HỌC VIÊN", "➕ THÊM MỚI"])
+            menu = st.radio("QUẢN TRỊ", ["📊 DOANH CHỦ DASHBOARD", "🔧 QUẢN LÝ USER", "💵 TÀI CHÍNH (HLV)", "👥 HỌC VIÊN (HLV)"])
         else:
-            st.markdown("---")
             menu = st.radio("MENU", ["🏠 TỔNG QUAN", "👥 HỌC VIÊN", "➕ THÊM MỚI", "💵 TÀI CHÍNH"])
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
     # =========================================================================
-    # 🌟 PHẦN ADMIN ĐÃ NÂNG CẤP (V44)
+    # 📊 DASHBOARD SAAS (TÍNH NĂNG MỚI: FINANCIAL ANALYTICS)
     # =========================================================================
-    if menu == "📊 DASHBOARD SAAS" and IS_ADMIN:
-        st.markdown(f"<div class='main-logo'>DOANH CHỦ SAAS</div>", unsafe_allow_html=True)
+    if menu == "📊 DOANH CHỦ DASHBOARD" and IS_ADMIN:
+        st.markdown(f"<div class='main-logo'>DOANH SỐ & TĂNG TRƯỞNG</div>", unsafe_allow_html=True)
         
-        # 1. LẤY DỮ LIỆU & LỌC BỎ ADMIN
         raw_users = run_query("users")
-        # Lọc bỏ dòng admin
         if not raw_users.empty:
             df_users = raw_users[raw_users['username'] != 'admin'].copy()
-        else:
-            df_users = pd.DataFrame()
-
-        if not df_users.empty:
-            # 2. TÍNH TOÁN DOANH THU & GÓI
-            df_users['Gói'] = df_users['full_name'].apply(lambda x: estimate_revenue(x)[1])
-            df_users['Doanh Thu'] = df_users['full_name'].apply(lambda x: estimate_revenue(x)[0])
             
-            total_rev = df_users['Doanh Thu'].sum()
-            total_users = len(df_users)
-            active_users = len(df_users[df_users['is_active']==True])
-            pending_users = total_users - active_users
+            if not df_users.empty:
+                # 1. TÍNH TOÁN DỮ LIỆU THÔNG MINH (KHÔNG CẦN CỘT MỚI)
+                def process_smart_data(row):
+                    money, pk_name, months = parse_revenue_logic(row['full_name'])
+                    # Logic: Suy ngược ngày đăng ký từ ngày hết hạn (Start = Expiry - Duration)
+                    if row['expiry_date']:
+                        end_date = pd.to_datetime(row['expiry_date'])
+                        start_date = end_date - timedelta(days=months*30)
+                    else:
+                        start_date = datetime.now() # Tạm tính là hôm nay nếu chưa active
+                    return money, pk_name, start_date
 
-            # 3. HIỂN THỊ METRIC
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("💰 TỔNG DOANH THU", f"{total_rev:,} đ")
-            c2.metric("👥 TỔNG KHÁCH", total_users)
-            c3.metric("✅ ĐANG HOẠT ĐỘNG", active_users)
-            c4.metric("⏳ CHỜ KÍCH HOẠT", pending_users)
+                # Áp dụng logic
+                computed = df_users.apply(process_smart_data, axis=1, result_type='expand')
+                df_users['Revenue'] = computed[0]
+                df_users['Package'] = computed[1]
+                df_users['Start_Date'] = computed[2]
 
-            st.divider()
+                # 2. BỘ LỌC THỜI GIAN (Time Filters)
+                today = datetime.now().date()
+                start_week = today - timedelta(days=today.weekday())
+                start_month = today.replace(day=1)
 
-            # 4. BIỂU ĐỒ THỐNG KÊ
-            col_chart1, col_chart2 = st.columns(2)
-            with col_chart1:
-                st.subheader("📊 Tỷ lệ các gói đăng ký")
-                pkg_count = df_users['Gói'].value_counts().reset_index()
-                pkg_count.columns = ['Gói', 'Số lượng']
-                fig = px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col_chart2:
-                st.subheader("📈 Tình trạng tài khoản")
-                status_count = df_users['is_active'].map({True: 'Active', False: 'Pending'}).value_counts().reset_index()
-                status_count.columns = ['Trạng thái', 'Số lượng']
-                fig2 = px.bar(status_count, x='Trạng thái', y='Số lượng', color='Trạng thái', color_discrete_map={'Active':'#00FF00', 'Pending':'#FF0000'})
-                st.plotly_chart(fig2, use_container_width=True)
+                rev_today = df_users[df_users['Start_Date'].dt.date == today]['Revenue'].sum()
+                rev_week = df_users[df_users['Start_Date'].dt.date >= start_week]['Revenue'].sum()
+                rev_month = df_users[df_users['Start_Date'].dt.date >= start_month]['Revenue'].sum()
+                rev_total = df_users['Revenue'].sum()
+                arpu = rev_total / len(df_users) if len(df_users) > 0 else 0
 
-        else: st.info("Chưa có dữ liệu khách hàng.")
+                # 3. HIỂN THỊ METRIC (HÀNG 1)
+                st.markdown("#### 💰 CHỈ SỐ TÀI CHÍNH")
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("HÔM NAY", f"{rev_today:,.0f} đ", delta="Real-time")
+                m2.metric("TUẦN NÀY", f"{rev_week:,.0f} đ")
+                m3.metric("THÁNG NÀY", f"{rev_month:,.0f} đ")
+                m4.metric("TỔNG TRỌN ĐỜI", f"{rev_total:,.0f} đ")
+                m5.metric("ARPU / KHÁCH", f"{arpu:,.0f} đ")
+                st.divider()
 
+                # 4. BIỂU ĐỒ (HÀNG 2)
+                c_chart1, c_chart2 = st.columns([2, 1])
+                with c_chart1:
+                    st.subheader("📈 Xu hướng dòng tiền")
+                    df_trend = df_users.groupby(df_users['Start_Date'].dt.date)['Revenue'].sum().reset_index()
+                    df_trend.columns = ['Ngày', 'Doanh Thu']
+                    fig = px.bar(df_trend, x='Ngày', y='Doanh Thu', color='Doanh Thu', color_continuous_scale='Greens')
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with c_chart2:
+                    st.subheader("📦 Phân bổ gói")
+                    pkg_count = df_users['Package'].value_counts().reset_index()
+                    pkg_count.columns = ['Gói', 'Số lượng']
+                    fig2 = px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+                    st.plotly_chart(fig2, use_container_width=True)
+            else: st.info("Chưa có khách hàng.")
+        else: st.info("Database trống.")
+
+    # =========================================================================
+    # 🔧 QUẢN LÝ USER (TÍNH NĂNG MỚI: CRM PRO)
+    # =========================================================================
     elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
-        st.markdown(f"<div class='main-logo'>DUYỆT THANH TOÁN</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='main-logo'>CRM KHÁCH HÀNG</div>", unsafe_allow_html=True)
         
-        # Lấy dữ liệu và lọc bỏ Admin
-        raw_users = run_query("users", order_by=("is_active", "asc"))
+        raw_users = run_query("users")
         if not raw_users.empty:
             df_view = raw_users[raw_users['username'] != 'admin'].copy()
             
-            # --- CÔNG CỤ TÌM KIẾM ---
-            search_term = st.text_input("🔍 Tìm kiếm khách hàng (Tên, User, Email):")
-            if search_term:
-                df_view = df_view[
-                    df_view['username'].str.contains(search_term, case=False) | 
-                    df_view['full_name'].str.contains(search_term, case=False) |
-                    df_view['email'].str.contains(search_term, case=False)
-                ]
+            # 1. TÍNH TOÁN TRẠNG THÁI CRM
+            def get_crm_status(row):
+                if not row['is_active']: return "🔴 Chờ duyệt"
+                if not row['expiry_date']: return "🔴 Lỗi data"
+                days = (pd.to_datetime(row['expiry_date']) - datetime.now()).days
+                if days < 0: return "⚫ Hết hạn"
+                if days <= 5: return "🟡 Sắp hết hạn"
+                return "🟢 Đang hoạt động"
 
-            # Hiển thị bảng đẹp hơn
+            df_view['Trạng thái'] = df_view.apply(get_crm_status, axis=1)
+
+            # 2. THANH CÔNG CỤ (Tìm kiếm & Lọc)
+            c_search, c_filter, c_export = st.columns([2, 1, 1])
+            with c_search:
+                search = st.text_input("🔍 Tìm kiếm (Tên, User):", placeholder="Nhập từ khóa...")
+            with c_filter:
+                filter_stt = st.selectbox("Lọc theo:", ["Tất cả", "🔴 Chờ duyệt", "🟢 Đang hoạt động", "🟡 Sắp hết hạn", "⚫ Hết hạn"])
+            with c_export:
+                st.write("") # Spacer
+                # Nút xuất Excel (CSV)
+                csv = df_view.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Xuất Excel", data=csv, file_name="danh_sach_khach.csv", mime="text/csv", use_container_width=True)
+
+            # Áp dụng bộ lọc
+            if search: df_view = df_view[df_view['username'].str.contains(search, case=False) | df_view['full_name'].str.contains(search, case=False)]
+            if filter_stt != "Tất cả": df_view = df_view[df_view['Trạng thái'] == filter_stt]
+
+            # 3. BẢNG DỮ LIỆU
             st.dataframe(
-                df_view[['id', 'username', 'full_name', 'email', 'is_active', 'expiry_date']], 
+                df_view[['Trạng thái', 'username', 'full_name', 'email', 'expiry_date']], 
                 use_container_width=True,
                 column_config={
-                    "is_active": st.column_config.CheckboxColumn("Trạng thái", help="Đã thanh toán chưa?"),
-                    "expiry_date": st.column_config.DateColumn("Hết hạn"),
-                    "full_name": "Họ tên & Gói"
+                    "expiry_date": st.column_config.DateColumn("Ngày hết hạn"),
+                    "full_name": "Gói đăng ký",
+                    "username": "Tài khoản"
                 }
             )
 
-            st.divider()
-            c1, c2 = st.columns(2)
-            
-            # FORM DUYỆT
-            with c1:
-                with st.form("admin_act"):
-                    st.subheader("📝 DUYỆT / GIA HẠN")
-                    # Chỉ hiện danh sách user (đã lọc admin) trong selectbox
-                    user_list = df_view['username'].tolist()
-                    if user_list:
-                        u_sel = st.selectbox("Chọn khách hàng:", user_list)
-                        months_add = st.selectbox("Gia hạn thêm:", [1, 3, 6, 12], index=0)
-                        is_active = st.checkbox("✅ ĐÃ THANH TOÁN (ACTIVE)", value=True)
-                        if st.form_submit_button("CẬP NHẬT"):
+            # 4. ACTION PANEL
+            st.markdown("### ⚡ TÁC VỤ NHANH")
+            ac1, ac2 = st.columns(2)
+            with ac1:
+                with st.form("act_user"):
+                    st.caption("KÍCH HOẠT / GIA HẠN")
+                    u_list = df_view['username'].tolist()
+                    if u_list:
+                        u_sel = st.selectbox("Chọn khách:", u_list)
+                        m_add = st.selectbox("Gói:", [1, 3, 6, 12], format_func=lambda x: f"{x} Tháng")
+                        if st.form_submit_button("✅ DUYỆT NGAY"):
                             row = df_view[df_view['username']==u_sel].iloc[0]
                             curr = row['expiry_date']
-                            start_d = pd.to_datetime(curr) if pd.notna(curr) else datetime.now()
-                            new_exp = (start_d + timedelta(days=months_add*30)).strftime('%Y-%m-%d')
-                            update_data("users", {"expiry_date": new_exp, "is_active": is_active}, "username", u_sel)
-                            st.success(f"Đã kích hoạt {u_sel}!"); time.sleep(1); st.rerun()
-                    else: st.info("Không tìm thấy user nào.")
-
-            # FORM ĐỔI PASS
-            with c2:
-                with st.form("admin_rs"):
-                    st.subheader("🔑 CẤP LẠI MẬT KHẨU")
-                    if user_list:
-                        u_rs = st.selectbox("Chọn khách hàng:", user_list, key="u_rs")
+                            start = pd.to_datetime(curr) if pd.notna(curr) else datetime.now()
+                            new_exp = (start + timedelta(days=m_add*30)).strftime('%Y-%m-%d')
+                            update_data("users", {"expiry_date": new_exp, "is_active": True}, "username", u_sel)
+                            st.success(f"Đã duyệt {u_sel}!"); time.sleep(1); st.rerun()
+            
+            with ac2:
+                 with st.form("del_user"):
+                    st.caption("CẤP LẠI MẬT KHẨU")
+                    if u_list:
+                        u_rs = st.selectbox("Chọn khách:", u_list, key="rs")
                         new_p = st.text_input("Mật khẩu mới")
-                        if st.form_submit_button("ĐỔI PASS"):
-                            if new_p:
-                                h = bcrypt.hashpw(new_p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                                update_data("users", {"password_hash": h}, "username", u_rs)
-                                st.success("Xong!"); time.sleep(1); st.rerun()
-                    else: st.info("Trống.")
-        else: st.info("Chưa có dữ liệu.")
+                        if st.form_submit_button("🔄 ĐỔI PASS"):
+                            h = bcrypt.hashpw(new_p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                            update_data("users", {"password_hash": h}, "username", u_rs)
+                            st.success("Xong!"); time.sleep(1); st.rerun()
 
-    # --- CÁC TAB CHỨC NĂNG (DÙNG CHUNG CHO CẢ ADMIN VÀ USER) ---
-    elif (menu == "🏠 TỔNG QUAN") or (menu == "💵 TÀI CHÍNH" and IS_ADMIN == False): 
-        # Logic TỔNG QUAN của USER
+    # --- CÁC TAB CHỨC NĂNG KHÁC GIỮ NGUYÊN ---
+    elif (menu == "🏠 TỔNG QUAN") or (menu == "💵 TÀI CHÍNH (HLV)"): 
         st.markdown(f"<div class='main-logo'>DASHBOARD</div>", unsafe_allow_html=True)
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not clients.empty:
@@ -356,8 +384,7 @@ else:
             st.dataframe(clients[['name', 'package_name', 'end_date', 'status']], use_container_width=True)
         else: st.info("Chưa có dữ liệu.")
 
-    elif menu == "👥 HỌC VIÊN":
-        # Logic HỌC VIÊN
+    elif menu == "👥 HỌC VIÊN (HLV)" or menu == "👥 HỌC VIÊN":
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not clients.empty:
             c_sel, _ = st.columns([1,2])
@@ -366,7 +393,6 @@ else:
             cid = int(client['id'])
             st.markdown(f"""<div class="css-card" style="border-top: 4px solid #D4AF37"><h1 style="color:#FFF; margin:0">{client['name']}</h1><span style="color:#D4AF37">{client['level']}</span></div>""", unsafe_allow_html=True)
             t1, t2, t3, t4 = st.tabs(["MEAL PLAN", "CHECK-IN", "TIẾN ĐỘ", "CÀI ĐẶT"])
-            # (Giữ nguyên logic tabs meal plan...)
             with t1:
                 plan = {}
                 try:
@@ -421,7 +447,7 @@ else:
                 else: st.error("Nhập tên!")
             st.button("🔥 LƯU HỒ SƠ & RESET", type="primary", use_container_width=True, on_click=save_client); st.markdown('</div>', unsafe_allow_html=True)
 
-    elif menu == "💵 TÀI CHÍNH" or (menu == "💵 TÀI CHÍNH" and IS_ADMIN):
+    elif menu == "💵 TÀI CHÍNH" or (menu == "💵 TÀI CHÍNH (HLV)"):
         st.markdown("### 💰 DOANH THU HLV")
         df = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not df.empty: st.metric("TỔNG", f"{df['price'].sum():,} VNĐ"); st.dataframe(df[['name', 'package_name', 'start_date', 'price']], use_container_width=True)
