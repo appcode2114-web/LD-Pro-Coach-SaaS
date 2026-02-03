@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V60 - THE CLEANER)
+# 1. CẤU HÌNH & KẾT NỐI (V61 - FULL CONTROL)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -49,30 +49,36 @@ def update_data(table_name, update_dict, match_col, match_val):
     try: supabase.table(table_name).update(update_dict).eq(match_col, match_val).execute(); return True
     except: return False
 
+def delete_data(table_name, match_col, match_val):
+    try: 
+        supabase.table(table_name).delete().eq(match_col, match_val).execute()
+        return True
+    except: return False
+
 def delete_user_force(username):
-    """
-    Hàm xoá User TẬN GỐC (Cascade Delete bằng Code)
-    Xóa Checkin -> Xóa Client -> Xóa User
-    """
+    """Xóa User SaaS (Khách mua phần mềm)"""
     try:
-        # 1. Lấy ID của User cần xóa
         user_data = supabase.table("users").select("id").eq("username", username).execute()
         if user_data.data:
             user_id = user_data.data[0]['id']
-            
-            # 2. Xóa tất cả check-in liên quan đến Trainer này
             supabase.table("checkins").delete().eq("trainer_id", user_id).execute()
-            
-            # 3. Xóa tất cả học viên (clients) của Trainer này
             supabase.table("clients").delete().eq("trainer_id", user_id).execute()
-            
-            # 4. Cuối cùng: Xóa User
             supabase.table("users").delete().eq("username", username).execute()
             return True, "Đã dọn dẹp sạch sẽ!"
         else:
-            return False, "Không tìm thấy User ID"
-    except Exception as e:
-        return False, f"Lỗi DB: {str(e)}"
+            supabase.table("users").delete().eq("username", username).execute()
+            return True, "Đã xóa user!"
+    except Exception as e: return False, f"Lỗi DB: {str(e)}"
+
+def delete_client_data(client_id):
+    """Xóa Học viên riêng (Nguồn doanh thu HLV)"""
+    try:
+        # Xóa check-in của học viên này trước
+        supabase.table("checkins").delete().eq("client_id", client_id).execute()
+        # Xóa học viên
+        supabase.table("clients").delete().eq("id", client_id).execute()
+        return True
+    except: return False
 
 def login_user(username, password):
     df = run_query("users", filter_col="username", filter_val=username)
@@ -100,17 +106,14 @@ def register_user(u, p, n, e, package_info):
     return ok, ""
 
 def parse_revenue_logic(full_name):
-    """Xử lý an toàn tuyệt đối cho user không có gói"""
-    if not full_name or not isinstance(full_name, str):
-        return 0, "Không xác định", 0
+    if not full_name or not isinstance(full_name, str): return 0, "Không xác định", 0
     if "1 Tháng" in full_name: return 200000, "1 Tháng", 1
     if "3 Tháng" in full_name: return 500000, "3 Tháng", 3
     if "6 Tháng" in full_name: return 900000, "6 Tháng", 6
     if "1 Năm" in full_name: return 1500000, "1 Năm", 12
-    # Trả về mặc định nếu không khớp gói nào để không bị lỗi
     return 0, "User Test/Cũ", 0
 
-# --- FORMULAS (GIỮ NGUYÊN) ---
+# --- FORMULAS ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
 
 def calc_basic(w, h, a, g, act, goal):
@@ -131,28 +134,6 @@ def draw_donut(p, c, f, cal):
     fig = px.pie(values=[p*4, c*4, f*9], names=['Pro', 'Carb', 'Fat'], hole=.65, color_discrete_sequence=['#00BFFF', '#FF4500', '#FFD700'])
     fig.update_layout(showlegend=False, margin=dict(t=0,b=0,l=0,r=0), height=150, paper_bgcolor='rgba(0,0,0,0)', annotations=[dict(text=f"<span style='font-size:24px; color:#FFF; font-weight:bold; font-family:Teko'>{cal}</span>", x=0.5, y=0.5, font_size=20, showarrow=False)])
     return fig
-
-# ==========================================
-# 3. CSS GIAO DIỆN
-# ==========================================
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Teko:wght@300;500;700&family=Montserrat:wght@400;600;800&display=swap');
-    .stApp { background: radial-gradient(circle at 50% 10%, #1a0505 0%, #000000 90%); color: #E0E0E0; font-family: 'Montserrat', sans-serif; }
-    .main-logo { font-family: 'Teko', sans-serif; font-size: 70px; font-weight: 700; text-align: center; background: linear-gradient(180deg, #FFD700 10%, #B8860B 60%, #8B6914 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px; filter: drop-shadow(0px 2px 0px #000); }
-    div[data-baseweb="input"], div[data-baseweb="select"] > div { background-color: #F5F5F5 !important; border: 1px solid #D1D1D1 !important; border-radius: 8px !important; color: #111 !important; }
-    input[class*="st-"], div[data-baseweb="select"] span { color: #111 !important; font-weight: 600; }
-    .css-card { background-color: rgba(20, 20, 20, 0.6); backdrop-filter: blur(10px); border: 1px solid #222; border-left: 3px solid #D4AF37; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-    .stButton > button { background: linear-gradient(90deg, #8B0000 0%, #C00000 100%); color: white; font-family: 'Teko', sans-serif; font-size: 22px; width: 100%; transition: 0.3s; }
-    .stButton > button:hover { background: linear-gradient(90deg, #C00000 0%, #FF0000 100%); box-shadow: 0 4px 15px rgba(255, 0, 0, 0.4); }
-    section[data-testid="stSidebar"] { background-color: #080808; border-right: 1px solid #222; }
-    section[data-testid="stSidebar"] * { color: #EEE !important; }
-    div[data-testid="stTable"] th { background-color: #D4AF37 !important; color: #000000 !important; font-family: 'Teko', sans-serif !important; }
-    div[data-testid="stTable"] td { background-color: #222 !important; color: #FFFFFF !important; border-bottom: 1px solid #444 !important; }
-    div[role="radiogroup"] label { border: 1px solid #444; padding: 10px; border-radius: 5px; background: #222; margin-bottom: 5px; }
-    div[role="radiogroup"] label[data-checked="true"] { border-color: #D4AF37; background: #333; }
-</style>
-""", unsafe_allow_html=True)
 
 # ==========================================
 # 4. LUỒNG CHÍNH
@@ -239,7 +220,7 @@ else:
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
     # =========================================================================
-    # 📊 DASHBOARD SAAS (V60 - FIXED DATA)
+    # 📊 DASHBOARD SAAS (BI)
     # =========================================================================
     if menu == "📊 DOANH CHỦ DASHBOARD" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DOANH SỐ & TĂNG TRƯỞNG</div>", unsafe_allow_html=True)
@@ -294,8 +275,7 @@ else:
                 with tab3:
                     pkg_count = df_users['Package'].value_counts().reset_index()
                     pkg_count.columns = ['Gói', 'Số lượng']
-                    if not pkg_count.empty:
-                        st.plotly_chart(px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4), use_container_width=True)
+                    if not pkg_count.empty: st.plotly_chart(px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4), use_container_width=True)
 
                 with tab4:
                     target = st.number_input("Mục tiêu tháng:", value=20000000, step=1000000)
@@ -316,7 +296,7 @@ else:
         else: st.info("Database trống.")
 
     # =========================================================================
-    # 🔧 QUẢN LÝ USER (V60 - THE CLEANER)
+    # 🔧 QUẢN LÝ USER (SAAS)
     # =========================================================================
     elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>QUẢN LÝ USER</div>", unsafe_allow_html=True)
@@ -350,26 +330,72 @@ else:
                 else: st.info("👈 Hãy chọn một dòng bên trái.")
         else: st.info("Trống.")
 
-    # --- CÁC PHẦN KHÁC (HLV...) GIỮ NGUYÊN ---
+    # =========================================================================
+    # 💵 TÀI CHÍNH HLV (PERSONAL REVENUE - V61)
+    # =========================================================================
     elif (menu == "🏠 TỔNG QUAN") or (menu == "💵 TÀI CHÍNH (HLV)"):
         st.markdown(f"<div class='main-logo'>DASHBOARD HLV</div>", unsafe_allow_html=True)
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
+        
         if not clients.empty:
             k1, k2, k3 = st.columns(3)
             k1.markdown(f"<div class='css-card' style='text-align:center'><h2>{len(clients)}</h2><p>HỌC VIÊN</p></div>", unsafe_allow_html=True)
             k2.markdown(f"<div class='css-card' style='text-align:center'><h2>Active</h2><p>TRẠNG THÁI</p></div>", unsafe_allow_html=True)
             k3.markdown(f"<div class='css-card' style='text-align:center'><h2>{clients['price'].sum():,}</h2><p>DOANH THU</p></div>", unsafe_allow_html=True)
-            st.dataframe(clients, use_container_width=True)
+            
+            st.divider()
+            st.markdown("### 📋 DANH SÁCH HỢP ĐỒNG (HỌC VIÊN)")
+            # Interactive Table để Xóa nhanh
+            client_event = st.dataframe(
+                clients[['name', 'package_name', 'price', 'start_date']], 
+                use_container_width=True, 
+                selection_mode="single-row", 
+                on_select="rerun"
+            )
+            
+            if client_event.selection.rows:
+                idx_c = client_event.selection.rows[0]
+                sel_client = clients.iloc[idx_c]
+                st.warning(f"Bạn đang chọn học viên: **{sel_client['name']}**")
+                if st.button("🗑️ XÓA HỢP ĐỒNG NÀY", type="primary"):
+                    delete_client_data(sel_client['id'])
+                    st.success("Đã xóa!"); time.sleep(0.5); st.rerun()
         else: st.info("Chưa có dữ liệu.")
 
+    # =========================================================================
+    # 👥 HỌC VIÊN (HLV) - V61 (CÓ NÚT XÓA)
+    # =========================================================================
     elif menu == "👥 HỌC VIÊN (HLV)" or menu == "👥 HỌC VIÊN":
         clients = run_query("clients", filter_col="trainer_id", filter_val=TRAINER_ID)
         if not clients.empty:
             c_sel, _ = st.columns([1,2]); c_name = c_sel.selectbox("CHỌN HỌC VIÊN:", clients['name'].tolist())
             client = clients[clients['name'] == c_name].iloc[0]; cid = int(client['id'])
+            
             st.markdown(f"### {client['name']} - {client['level']}")
-            t1, t2, t3, t4 = st.tabs(["MEAL PLAN", "CHECK-IN", "TIẾN ĐỘ", "CÀI ĐẶT"])
-            with t1: st.info("Chế độ ăn hiển thị tại đây")
+            
+            t1, t2, t3, t4, t5 = st.tabs(["MEAL PLAN", "CHECK-IN", "TIẾN ĐỘ", "CÀI ĐẶT", "⚙️ QUẢN LÝ"])
+            
+            with t1:
+                # Logic Meal Plan (Rút gọn)
+                plan = {}
+                try:
+                    if "Professional" in client['level']:
+                        goal_map = {"Tăng cân": "Bulking", "Giảm mỡ": "Cutting", "Cải thiện sức khỏe": "Maintain"}
+                        safe_goal = goal_map.get(client['goal'], client['goal'])
+                        f_ratio = JP_FORMULAS[client['gender']][safe_goal][client['activity']]
+                        w = client['start_weight']
+                        plan = {'train': {'p': int(w*f_ratio['train']['p']), 'c': int(w*f_ratio['train']['c']), 'f': int(w*f_ratio['train']['f'])}, 'rest': {'p': int(w*f_ratio['rest']['p']), 'c': int(w*f_ratio['rest']['c']), 'f': int(w*f_ratio['rest']['f'])}}
+                        plan['train']['cal'] = plan['train']['p']*4 + plan['train']['c']*4 + plan['train']['f']*9
+                        plan['rest']['cal'] = plan['rest']['p']*4 + plan['rest']['c']*4 + plan['rest']['f']*9
+                    else:
+                        cal_base, p, c, f = calc_basic(client['start_weight'], client['height'], client['age'], client['gender'], client['activity'], client['goal'])
+                        plan = {'train': {'p': p, 'c': int(c*1.1), 'f': f, 'cal': int(cal_base*1.05)}, 'rest': {'p': p, 'c': int(c*0.9), 'f': f, 'cal': int(cal_base*0.95)}}
+                except: pass
+                if plan:
+                    c1, c2 = st.columns(2)
+                    with c1: st.plotly_chart(draw_donut(plan['train']['p'], plan['train']['c'], plan['train']['f'], plan['train']['cal']), use_container_width=True); st.table(make_meal_df(plan['train']['p'], plan['train']['c'], plan['train']['f'], 'train'))
+                    with c2: st.plotly_chart(draw_donut(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], plan['rest']['cal']), use_container_width=True); st.table(make_meal_df(plan['rest']['p'], plan['rest']['c'], plan['rest']['f'], 'rest'))
+
             with t2:
                 with st.form("chk"):
                     d = st.date_input("Ngày"); w = st.number_input("Cân nặng")
@@ -378,6 +404,14 @@ else:
             with t3:
                 logs = run_query("checkins", filter_col="client_id", filter_val=cid)
                 if not logs.empty: st.plotly_chart(px.line(logs, x='date', y='weight'), use_container_width=True)
+            
+            with t5: # TAB QUẢN LÝ (XÓA HỌC VIÊN)
+                st.error("⚠️ Vùng nguy hiểm")
+                st.write(f"Bạn có chắc muốn xóa học viên **{client['name']}** không? Hành động này không thể hoàn tác.")
+                if st.button("🗑️ XÓA VĨNH VIỄN HỌC VIÊN NÀY", type="primary"):
+                    if delete_client_data(cid):
+                        st.success("Đã xóa học viên!"); time.sleep(1); st.rerun()
+                    else: st.error("Lỗi xóa!")
 
     elif menu == "➕ THÊM MỚI":
         st.markdown("### 📝 HỒ SƠ KHÁCH HÀNG")
