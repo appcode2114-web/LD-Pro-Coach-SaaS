@@ -1,20 +1,3 @@
-Chào mừng bạn quay lại! Rất vui được tiếp tục hỗ trợ bạn.
-
-Vấn đề **"Không xóa được User không có gói/giá tiền"** thường do 2 nguyên nhân chính:
-
-1. **Lỗi liên kết dữ liệu (Foreign Key):** User này (dù là user test) có thể đã lỡ tạo ra dữ liệu con (ví dụ: đã thêm học viên, hoặc có log check-in). Database sẽ chặn không cho xóa User cha nếu chưa xóa dữ liệu con.
-2. **Lỗi Code Python:** Khi code cố gắng đọc thông tin gói để hiển thị (trước khi kịp xóa), nó gặp dữ liệu rỗng và bị "đơ".
-
-Đây là phiên bản **V60 - THE CLEANER (Kẻ Dọn Dẹp)**.
-
-### 🛠️ TÔI ĐÃ NÂNG CẤP GÌ ĐỂ XÓA ĐƯỢC?
-
-1. **Hàm `delete_user_force` (Xóa Cưỡng Chế):** Thay vì chỉ xóa mỗi User, hàm này sẽ tìm ID của User đó -> Xóa sạch mọi Học viên (`clients`) và Check-in (`checkins`) liên quan đến User đó trước -> Sau đó mới xóa User. **Đảm bảo sạch 100%**.
-2. **Bỏ qua lỗi hiển thị:** Tại khu vực quản lý, nếu User không có gói, hệ thống sẽ hiển thị là "User Test (0đ)" thay vì báo lỗi, giúp bạn chọn được họ để xóa.
-
-Bạn hãy **Copy toàn bộ code này** và dán đè vào `ai_coach.py`.
-
-```python
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -404,5 +387,3 @@ else:
             if st.form_submit_button("LƯU HỒ SƠ"):
                 insert_data("clients", {"trainer_id": TRAINER_ID, "name": n, "phone": p, "gender": g, "height": h, "start_weight": w, "package_name": pkg, "price": pr, "start_date": datetime.now().strftime('%Y-%m-%d'), "status": "Active"})
                 st.success("Đã lưu!"); st.rerun()
-
-```
