@@ -1,3 +1,20 @@
+Chào mừng bạn quay lại! Rất vui được tiếp tục hỗ trợ bạn.
+
+Vấn đề **"Không xóa được User không có gói/giá tiền"** thường do 2 nguyên nhân chính:
+
+1. **Lỗi liên kết dữ liệu (Foreign Key):** User này (dù là user test) có thể đã lỡ tạo ra dữ liệu con (ví dụ: đã thêm học viên, hoặc có log check-in). Database sẽ chặn không cho xóa User cha nếu chưa xóa dữ liệu con.
+2. **Lỗi Code Python:** Khi code cố gắng đọc thông tin gói để hiển thị (trước khi kịp xóa), nó gặp dữ liệu rỗng và bị "đơ".
+
+Đây là phiên bản **V60 - THE CLEANER (Kẻ Dọn Dẹp)**.
+
+### 🛠️ TÔI ĐÃ NÂNG CẤP GÌ ĐỂ XÓA ĐƯỢC?
+
+1. **Hàm `delete_user_force` (Xóa Cưỡng Chế):** Thay vì chỉ xóa mỗi User, hàm này sẽ tìm ID của User đó -> Xóa sạch mọi Học viên (`clients`) và Check-in (`checkins`) liên quan đến User đó trước -> Sau đó mới xóa User. **Đảm bảo sạch 100%**.
+2. **Bỏ qua lỗi hiển thị:** Tại khu vực quản lý, nếu User không có gói, hệ thống sẽ hiển thị là "User Test (0đ)" thay vì báo lỗi, giúp bạn chọn được họ để xóa.
+
+Bạn hãy **Copy toàn bộ code này** và dán đè vào `ai_coach.py`.
+
+```python
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,7 +26,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CẤU HÌNH & KẾT NỐI (V59 - BUG FIX DELETE)
+# 1. CẤU HÌNH & KẾT NỐI (V60 - THE CLEANER)
 # ==========================================
 st.set_page_config(page_title="LD PRO COACH - System", layout="wide", page_icon="🦁")
 
@@ -49,13 +66,30 @@ def update_data(table_name, update_dict, match_col, match_val):
     try: supabase.table(table_name).update(update_dict).eq(match_col, match_val).execute(); return True
     except: return False
 
-def delete_data(table_name, match_col, match_val):
-    """Hàm xoá dữ liệu chuẩn xác - Ép buộc thực thi"""
-    try: 
-        supabase.table(table_name).delete().eq(match_col, match_val).execute()
-        return True
-    except: 
-        return False
+def delete_user_force(username):
+    """
+    Hàm xoá User TẬN GỐC (Cascade Delete bằng Code)
+    Xóa Checkin -> Xóa Client -> Xóa User
+    """
+    try:
+        # 1. Lấy ID của User cần xóa
+        user_data = supabase.table("users").select("id").eq("username", username).execute()
+        if user_data.data:
+            user_id = user_data.data[0]['id']
+            
+            # 2. Xóa tất cả check-in liên quan đến Trainer này
+            supabase.table("checkins").delete().eq("trainer_id", user_id).execute()
+            
+            # 3. Xóa tất cả học viên (clients) của Trainer này
+            supabase.table("clients").delete().eq("trainer_id", user_id).execute()
+            
+            # 4. Cuối cùng: Xóa User
+            supabase.table("users").delete().eq("username", username).execute()
+            return True, "Đã dọn dẹp sạch sẽ!"
+        else:
+            return False, "Không tìm thấy User ID"
+    except Exception as e:
+        return False, f"Lỗi DB: {str(e)}"
 
 def login_user(username, password):
     df = run_query("users", filter_col="username", filter_val=username)
@@ -83,14 +117,15 @@ def register_user(u, p, n, e, package_info):
     return ok, ""
 
 def parse_revenue_logic(full_name):
-    """Xử lý an toàn: Không có thông tin gói vẫn chạy được"""
-    if not full_name or not isinstance(full_name, str): 
-        return 0, "Dữ liệu cũ", 0
+    """Xử lý an toàn tuyệt đối cho user không có gói"""
+    if not full_name or not isinstance(full_name, str):
+        return 0, "Không xác định", 0
     if "1 Tháng" in full_name: return 200000, "1 Tháng", 1
     if "3 Tháng" in full_name: return 500000, "3 Tháng", 3
     if "6 Tháng" in full_name: return 900000, "6 Tháng", 6
     if "1 Năm" in full_name: return 1500000, "1 Năm", 12
-    return 0, "Dữ liệu cũ", 0
+    # Trả về mặc định nếu không khớp gói nào để không bị lỗi
+    return 0, "User Test/Cũ", 0
 
 # --- FORMULAS (GIỮ NGUYÊN) ---
 JP_FORMULAS = {'Nam': {'Bulking': {'Light': {'train': {'p': 3.71, 'c': 4.78, 'f': 0.58}, 'rest': {'p': 3.25, 'c': 2.78, 'f': 1.44}}, 'Moderate': {'train': {'p': 4.07, 'c': 5.23, 'f': 0.35}, 'rest': {'p': 3.10, 'c': 3.10, 'f': 1.83}}, 'High': {'train': {'p': 4.25, 'c': 5.60, 'f': 0.50}, 'rest': {'p': 3.30, 'c': 3.50, 'f': 1.90}}}, 'Maintain': {'Light': {'train': {'p': 3.10, 'c': 3.98, 'f': 0.67}, 'rest': {'p': 3.10, 'c': 1.35, 'f': 0.94}}, 'Moderate': {'train': {'p': 3.38, 'c': 4.37, 'f': 0.85}, 'rest': {'p': 3.00, 'c': 2.58, 'f': 1.33}}, 'High': {'train': {'p': 3.60, 'c': 4.80, 'f': 1.00}, 'rest': {'p': 3.20, 'c': 3.00, 'f': 1.50}}}, 'Cutting': {'Light': {'train': {'p': 2.48, 'c': 3.18, 'f': 0.63}, 'rest': {'p': 2.78, 'c': 1.23, 'f': 0.96}}, 'Moderate': {'train': {'p': 2.71, 'c': 3.01, 'f': 0.70}, 'rest': {'p': 2.74, 'c': 2.05, 'f': 0.92}}, 'High': {'train': {'p': 2.90, 'c': 3.40, 'f': 0.80}, 'rest': {'p': 2.90, 'c': 2.30, 'f': 1.10}}}}, 'Nữ': {'Bulking': {'Light': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.80}, 'rest': {'p': 2.40, 'c': 2.00, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.60, 'c': 4.00, 'f': 0.70}, 'rest': {'p': 2.50, 'c': 2.50, 'f': 1.10}}, 'High': {'train': {'p': 2.80, 'c': 4.50, 'f': 0.80}, 'rest': {'p': 2.60, 'c': 3.00, 'f': 1.20}}}, 'Maintain': {'Light': {'train': {'p': 2.20, 'c': 3.00, 'f': 0.90}, 'rest': {'p': 2.20, 'c': 1.50, 'f': 1.00}}, 'Moderate': {'train': {'p': 2.40, 'c': 3.50, 'f': 0.85}, 'rest': {'p': 2.30, 'c': 2.00, 'f': 1.10}}, 'High': {'train': {'p': 2.50, 'c': 4.00, 'f': 1.00}, 'rest': {'p': 2.40, 'c': 2.50, 'f': 1.20}}}, 'Cutting': {'Light': {'train': {'p': 2.20, 'c': 2.00, 'f': 0.70}, 'rest': {'p': 2.20, 'c': 0.80, 'f': 0.90}}, 'Moderate': {'train': {'p': 2.40, 'c': 2.50, 'f': 0.70}, 'rest': {'p': 2.40, 'c': 1.20, 'f': 0.90}}, 'High': {'train': {'p': 2.50, 'c': 3.00, 'f': 0.80}, 'rest': {'p': 2.50, 'c': 1.50, 'f': 1.00}}}}}
@@ -151,11 +186,16 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["ĐĂNG NHẬP", "ĐĂNG KÝ GÓI"])
         with tab1:
             with st.form("login"):
-                u = st.text_input("Username"); p = st.text_input("Password", type="password")
+                u = st.text_input("Username")
+                p = st.text_input("Password", type="password")
                 if st.form_submit_button("🚀 ĐĂNG NHẬP", type="primary", use_container_width=True):
                     res = login_user(u, p)
-                    if isinstance(res, str) and res == "LOCKED": st.warning("🔒 Chờ duyệt!")
-                    elif res: st.session_state.logged_in = True; st.session_state.user_info = res; st.rerun()
+                    if isinstance(res, str) and res == "LOCKED":
+                        st.warning("🔒 Tài khoản đang chờ duyệt! Vui lòng liên hệ Admin.")
+                    elif res:
+                        st.session_state.logged_in = True
+                        st.session_state.user_info = res
+                        st.success("Thành công!"); time.sleep(0.5); st.rerun()
                     else: st.error("Sai thông tin!")
         with tab2:
             if 'reg_step' not in st.session_state: st.session_state.reg_step = 1
@@ -164,12 +204,13 @@ if not st.session_state.logged_in:
                 nu = st.text_input("Tên đăng nhập", key="r_u"); np = st.text_input("Mật khẩu", type="password", key="r_p")
                 nn = st.text_input("Họ tên", key="r_n"); ne = st.text_input("Email", key="r_e")
                 if st.button("TIẾP THEO ➡️", use_container_width=True):
-                    if nu and np and nn and ne: st.session_state.saved_u = nu; st.session_state.saved_p = np; st.session_state.saved_n = nn; st.session_state.saved_e = ne; st.session_state.reg_step = 2; st.rerun()
+                    if nu and np and nn and ne: 
+                        st.session_state.saved_u = nu; st.session_state.saved_p = np; st.session_state.saved_n = nn; st.session_state.saved_e = ne; st.session_state.reg_step = 2; st.rerun()
                     else: st.warning("Điền đủ thông tin!")
             elif st.session_state.reg_step == 2:
                 st.markdown("##### 2. CHỌN GÓI")
                 packages = {"1 Tháng": 200000, "3 Tháng": 500000, "6 Tháng": 900000, "1 Năm (VIP)": 1500000}
-                pkg_choice = st.radio("Chọn gói phù hợp:", list(packages.keys()))
+                pkg_choice = st.radio("Chọn gói:", list(packages.keys()))
                 st.metric("THANH TOÁN:", f"{packages[pkg_choice]:,} VNĐ")
                 c1, c2 = st.columns(2)
                 if c1.button("⬅️ QUAY LẠI"): st.session_state.reg_step = 1; st.rerun()
@@ -187,7 +228,7 @@ if not st.session_state.logged_in:
                 amount = st.session_state.final_money; content = f"KICH HOAT {st.session_state.saved_u}"
                 qr_url = f"https://img.vietqr.io/image/{bank_id}-{acc_no}-compact.jpg?amount={amount}&addInfo={content}&accountName={acc_name}"
                 st.success("ĐĂNG KÝ THÀNH CÔNG!"); st.image(qr_url, caption="Quét mã thanh toán", width=300)
-                st.info("⚡ Chờ 1-5 phút hệ thống kích hoạt."); 
+                st.info("Vui lòng đợi 1-5 phút để hệ thống kích hoạt."); 
                 if st.button("VỀ TRANG CHỦ"): st.session_state.reg_step = 1; st.rerun()
 
 else:
@@ -215,7 +256,7 @@ else:
         if st.button("Đăng xuất"): st.session_state.logged_in = False; st.rerun()
 
     # =========================================================================
-    # 📊 DASHBOARD SAAS (V59 - FIXED ANALYTICS)
+    # 📊 DASHBOARD SAAS (V60 - FIXED DATA)
     # =========================================================================
     if menu == "📊 DOANH CHỦ DASHBOARD" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>DOANH SỐ & TĂNG TRƯỞNG</div>", unsafe_allow_html=True)
@@ -238,28 +279,49 @@ else:
                 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 TỔNG QUAN", "📅 BÁO CÁO THÁNG", "📦 HIỆU QUẢ GÓI", "🎯 MỤC TIÊU", "📄 DỮ LIỆU GỐC"])
 
                 with tab1:
-                    rev_today = df_users[df_users['Start_Date'].dt.date == datetime.now().date()]['Revenue'].sum()
-                    st.metric("HÔM NAY", f"{rev_today:,.0f} đ"); st.divider()
+                    today = datetime.now().date()
+                    rev_today = df_users[df_users['Start_Date'].dt.date == today]['Revenue'].sum()
+                    rev_total = df_users['Revenue'].sum()
+                    m1, m2 = st.columns(2)
+                    m1.metric("HÔM NAY", f"{rev_today:,.0f} đ"); m2.metric("TỔNG TRỌN ĐỜI", f"{rev_total:,.0f} đ")
                     df_trend = df_users.groupby(df_users['Start_Date'].dt.date)['Revenue'].sum().reset_index()
-                    st.plotly_chart(px.bar(df_trend, x='Start_Date', y='Revenue', color_discrete_sequence=['#FFD700']), use_container_width=True)
+                    if not df_trend.empty:
+                        fig = px.bar(df_trend, x='Start_Date', y='Revenue', color_discrete_sequence=['#FFD700'], title="Dòng tiền theo ngày")
+                        st.plotly_chart(fig, use_container_width=True)
 
                 with tab2:
+                    st.markdown("### 🗓️ SỔ CÁI CHI TIẾT (12 THÁNG)")
                     current_year = datetime.now().year
                     for m in range(1, 13):
-                        m_key = f"{current_year}-{m:02d}"
-                        df_m = df_users[df_users['Month_Sort'] == m_key].copy()
-                        total_m = df_m['Revenue'].sum()
-                        with st.expander(f"📁 Tháng {m:02d} - {total_m:,.0f} VNĐ"):
-                            if not df_m.empty:
-                                df_m = df_m.sort_values(by='Start_Date')
-                                df_detail = df_m[['Start_Date', 'full_name', 'Package', 'Revenue']].copy()
+                        month_key = f"{current_year}-{m:02d}"
+                        df_month = df_users[df_users['Month_Sort'] == month_key].copy()
+                        total_rev_month = df_month['Revenue'].sum()
+                        icon = "✅" if total_rev_month > 0 else "⚪"
+                        with st.expander(f"{icon} Tháng {m:02d} - Doanh thu: {total_rev_month:,.0f} VNĐ ({len(df_month)} Đơn)"):
+                            if not df_month.empty:
+                                df_month = df_month.sort_values(by='Start_Date')
+                                df_detail = df_month[['Start_Date', 'full_name', 'Package', 'Revenue']].copy()
                                 df_detail['Ngày'] = df_detail['Start_Date'].dt.strftime('%d/%m')
                                 df_detail['Giờ'] = df_detail['Start_Date'].dt.strftime('%H:%M')
                                 df_detail['Số Tiền'] = df_detail['Revenue'].apply(lambda x: f"{x:,.0f}")
                                 st.dataframe(df_detail[['Ngày', 'Giờ', 'full_name', 'Package', 'Số Tiền']], use_container_width=True, hide_index=True)
+                                st.caption(f"👉 Tổng cộng Tháng {m}: {total_rev_month:,.0f} VNĐ")
                             else: st.info("Trống.")
 
-                with tab5: # DỮ LIỆU GỐC
+                with tab3:
+                    pkg_count = df_users['Package'].value_counts().reset_index()
+                    pkg_count.columns = ['Gói', 'Số lượng']
+                    if not pkg_count.empty:
+                        st.plotly_chart(px.pie(pkg_count, values='Số lượng', names='Gói', hole=0.4), use_container_width=True)
+
+                with tab4:
+                    target = st.number_input("Mục tiêu tháng:", value=20000000, step=1000000)
+                    this_month = datetime.now().strftime('%Y-%m')
+                    actual = df_users[df_users['Month_Sort'] == this_month]['Revenue'].sum()
+                    st.progress(min(actual/target, 1.0))
+                    st.metric("Đã đạt", f"{actual:,.0f} / {target:,.0f} VNĐ")
+
+                with tab5:
                     col_f, col_d = st.columns([3, 1])
                     sel_f = col_f.selectbox("📅 Lọc:", ["Tất cả"] + [f"Tháng {i}" for i in range(1, 13)])
                     df_ex = df_users[['Start_Date', 'username', 'full_name', 'Package', 'Revenue', 'Month_Sort']].copy()
@@ -271,7 +333,7 @@ else:
         else: st.info("Database trống.")
 
     # =========================================================================
-    # 🔧 QUẢN LÝ USER (V59 - SMART SYNC FIXED)
+    # 🔧 QUẢN LÝ USER (V60 - THE CLEANER)
     # =========================================================================
     elif menu == "🔧 QUẢN LÝ USER" and IS_ADMIN:
         st.markdown(f"<div class='main-logo'>QUẢN LÝ USER</div>", unsafe_allow_html=True)
@@ -288,7 +350,7 @@ else:
                 if event.selection.rows:
                     idx = event.selection.rows[0]; user_data = df.iloc[idx]; sel_u = user_data['username']
                     st.info(f"Đang chọn: **{sel_u}**")
-                    with st.form("edit_form_v59"):
+                    with st.form("edit_form_v60"):
                         new_name = st.text_input("Họ tên & Gói:", value=str(user_data['full_name']))
                         new_note = st.text_area("Ghi chú (Note):", value=str(user_data['note']) if pd.notna(user_data['note']) else "")
                         curr_exp = user_data['expiry_date']
@@ -298,14 +360,10 @@ else:
                         if c_u.form_submit_button("💾 LƯU"):
                             update_data("users", {"full_name": new_name, "note": new_note, "expiry_date": str(new_exp), "is_active": new_active}, "username", sel_u)
                             st.success("Xong!"); time.sleep(0.5); st.rerun()
-                        if c_d.form_submit_button("🗑️ XÓA VĨNH VIỄN", type="primary"):
-                            with st.spinner("Đang xóa dữ liệu..."):
-                                # LOGIC XÓA ƯU TIÊN: Chạy lệnh xóa thẳng vào DB, bỏ qua các ràng buộc tính toán
-                                if delete_data("users", "username", sel_u):
-                                    st.success(f"Đã xóa {sel_u}!")
-                                    time.sleep(1.5) # Chờ DB xác nhận
-                                    st.rerun()
-                                else: st.error("Lỗi xóa!")
+                        if c_d.form_submit_button("🗑️ XÓA SẠCH", type="primary"):
+                            ok, msg = delete_user_force(sel_u)
+                            if ok: st.success(msg); time.sleep(1); st.rerun()
+                            else: st.error(msg)
                 else: st.info("👈 Hãy chọn một dòng bên trái.")
         else: st.info("Trống.")
 
@@ -346,3 +404,5 @@ else:
             if st.form_submit_button("LƯU HỒ SƠ"):
                 insert_data("clients", {"trainer_id": TRAINER_ID, "name": n, "phone": p, "gender": g, "height": h, "start_weight": w, "package_name": pkg, "price": pr, "start_date": datetime.now().strftime('%Y-%m-%d'), "status": "Active"})
                 st.success("Đã lưu!"); st.rerun()
+
+```
